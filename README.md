@@ -57,12 +57,12 @@ PrincessPink enforces a strict, non-negotiable **zero-violence, zero-nudity** po
 | **Language & Workspace** | Go 1.27+ (`go.work` multi-module workspace, independent semantic versioning per service) |
 | **Frontend Microservices** | Go + **Gin** HTTP framework (`frontend-gateway`, `frontend-sheets`, `frontend-gm`, `frontend-chat`, `portrait-renderer`) with server-rendered HTML/HTMX and authenticated WebSockets (`wss://`) |
 | **Internal Communication** | **gRPC / Protocol Buffers** (`pkg/proto`) for synchronous RPC & parallel attribute fan-out; **NATS JetStream** (or Azure Service Bus) for simulation ticks, lifecycle events, and chat pub/sub |
-| **User Administration & Security** | `user-admin` backed by **PostgreSQL** with `Argon2id` password hashing, MFA (TOTP / WebAuthn), RBAC (`PLAYER` / `GAME_MASTER`), TLS 1.3 / mTLS, and immutable audit logging |
+| **User Administration & Security** | `user-admin` backed by **PostgreSQL 18+** with `Argon2id` password hashing, MFA (TOTP / WebAuthn), RBAC (`PLAYER` / `GAME_MASTER`), TLS 1.3 / mTLS, and immutable audit logging |
 | **Character Sheet & Attributes** | `character-registry`, `sheet-aggregator` (concurrent `errgroup` fan-out with graceful degradation and tick-based caching), and dedicated `attr-*` microservices |
 | **Simulation & Genetics Engine** | Event-driven Go microservices (`sim-clock`, `sim-egg-reserve`, `sim-egg-selection`, `sim-menarche`, `sim-menstruation`, `sim-ejaculation`, `sim-sperm-race`, `sim-gamete-surface`, `sim-conception`, `sim-dna`, `sim-birth-date`, `sim-gestation`, `sim-mortality`, `sim-lifecycle`) using **SQLite** for scientific reference data, per-female egg-reserve databases, and per-ejaculation sperm-cell artifacts |
-| **Real-Time Chat** | `chat-service` + `frontend-chat` with PostgreSQL persistence (`chat.*` schema), NATS JetStream fan-out, rate limiting, and content-policy moderation |
+| **Real-Time Chat** | `chat-service` + `frontend-chat` with PostgreSQL 18+ persistence (`chat.*` schema), NATS JetStream fan-out, rate limiting, and content-policy moderation |
 | **Observability & Quality** | **OpenTelemetry** tracing, `log/slog` structured JSON logging, Prometheus metrics, deterministic fixed-seed simulation tests, `golangci-lint`, `govulncheck`, and Trivy container scanning |
-| **Deployment Target** | Hardened non-root `distroless/static` containers on **Microsoft Azure Kubernetes Service (AKS)** with Azure Database for PostgreSQL, ACR, and Key Vault |
+| **Deployment Target** | Hardened non-root `distroless/static` containers on **Microsoft Azure Kubernetes Service (AKS)** with Azure Database for PostgreSQL Flexible Server (18+), ACR, and Key Vault |
 
 For full entity-relationship models, architecture diagrams, SQLite deployment patterns, and service catalogs, see the [Technical Concept](docs/Concept.md).
 
@@ -97,7 +97,7 @@ princesspink/
 - [Go](https://go.dev/) 1.27+
 - [Git](https://git-scm.com/)
 - GNU `make`
-- *(Optional / for upcoming service builds and local stacks)* [Docker](https://www.docker.com/) (with Compose), PostgreSQL, `kubectl`, and [Trivy](https://trivy.dev/)
+- *(Optional / for upcoming service builds and local stacks)* [Docker](https://www.docker.com/) (with Compose), [PostgreSQL](https://www.postgresql.org/) 18+ (see [ADR-0001](docs/architecture/ADR-0001-minimum-postgresql-version.md)), `kubectl`, and [Trivy](https://trivy.dev/)
 
 ### Clone the Repository
 
@@ -147,7 +147,7 @@ PrincessPink is currently in **Phase 0 / Architectural Foundation**. Planned imp
 
 - **[Technical Concept (`docs/Concept.md`)](docs/Concept.md)** — Full domain model, ER & sequence diagrams, character lifecycle, gamete DNA & SQLite architecture, microservice catalog, chat design, Azure AKS topology, and glossary.
 - **[API Specifications (`docs/api/`)](docs/api/)** — OpenAPI and Protobuf contract documentation (planned).
-- **[Architecture Docs (`docs/architecture/`)](docs/architecture/)** — ADRs and infrastructure specifications (planned).
+- **[Architecture Docs (`docs/architecture/`)](docs/architecture/)** — ADRs and infrastructure specifications, including [ADR-0001: Minimum PostgreSQL Version (PostgreSQL 18+)](docs/architecture/ADR-0001-minimum-postgresql-version.md).
 - **[Operational Runbooks (`docs/runbooks/`)](docs/runbooks/)** — Deployment, backup, and incident response runbooks (planned).
 
 ---

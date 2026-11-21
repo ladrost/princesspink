@@ -552,7 +552,8 @@ PrincessPink provides an integrated, real-time **Chat** system (`frontend-chat` 
 PrincessPink uses a **polyglot persistence strategy** aligned with service ownership:
 
 ### 5.1 Central PostgreSQL (Authoritative Transactional Data)
-Hosted on **Azure Database for PostgreSQL (Flexible Server)** with automated backups, point-in-time recovery (PITR), and high availability.
+Hosted on **Azure Database for PostgreSQL (Flexible Server)** running **PostgreSQL 18+** (minimum supported version; see [ADR-0001](architecture/ADR-0001-minimum-postgresql-version.md)) with automated backups, point-in-time recovery (PITR), and high availability.
+- **Minimum Version Rationale (`PostgreSQL 18+`):** Generally Available across all Azure public regions with upstream security support through November 2030, providing native `uuidv7()` for PrincessPink's UUID-everywhere primary keys and cursor-paginated chat/audit/outbox tables, `RETURNING OLD/NEW` for atomic audit trails, SQL/JSON functions for `jsonb` (`simulation_config`), B-tree skip scans, Asynchronous I/O (`worker` mode on Azure), and hardened security (`SCRAM-SHA-256`, TLS 1.3, OAuth 2.0 / Microsoft Entra ID).
 - **Owned Domains:**
   - `user-admin`: Users, credentials (Argon2id hashes), MFA secrets, sessions/refresh tokens, groups, memberships, RBAC policies, and audit logs.
   - `character-registry`: Character UUIDs, player ownership, group association, player-given names, `gender`, `date_of_birth`, `date_of_death`, `lifecycle_state`, gender-specific milestone history (such as `date_of_first_menstruation` and `menstruation_dates`), ovarian Egg-Reserve SQLite DB links (mapped to female `character_uuid`), mother/father lineage links, and immutable diploid genome records (or references).
@@ -608,7 +609,7 @@ PrincessPink runs on **Azure Kubernetes Service (AKS)** with workload isolation 
 ### 6.2 Azure Managed Services Integration
 - **Azure Kubernetes Service (AKS):** Managed control plane, separate system and user node pools, cluster autoscaler.
 - **Azure Container Registry (ACR):** Private registry for signed Go distroless/scratch container images.
-- **Azure Database for PostgreSQL Flexible Server:** Managed central relational database with private VNet integration.
+- **Azure Database for PostgreSQL Flexible Server (PostgreSQL 18+):** Managed central relational database (minimum version PostgreSQL 18 per [ADR-0001](architecture/ADR-0001-minimum-postgresql-version.md)) with private VNet integration and Microsoft Entra ID authentication.
 - **Azure Key Vault + Secrets Store CSI Driver:** Centralized storage and automatic rotation of database credentials, JWT signing keys, and TLS certificates.
 - **Azure Monitor & Log Analytics:** Unified metrics, logs, and alerting.
 
@@ -632,7 +633,7 @@ PrincessPink runs on **Azure Kubernetes Service (AKS)** with workload isolation 
 - **Unit Tests:** Pure Go tests for biological formulas, genetic crossover/recombination math, hormonal curves, and RBAC rules.
 - **Deterministic Simulation Tests:** Fixed-seed end-to-end reproduction scenarios verifying statistical invariants (e.g., Mendelian ratios, expected sex-chromosome distribution ~50/50 over large cohorts, cycle duration bounds).
 - **Contract Tests:** Protobuf schema compatibility checks (`buf breaking`) and OpenAPI validation stored under `docs/api/`.
-- **Integration Tests:** Containerized tests (e.g., Testcontainers with PostgreSQL and NATS) verifying authentication flows, authorization boundaries (Player vs. GM), and event pipelines.
+- **Integration Tests:** Containerized tests (e.g., Testcontainers with PostgreSQL 18+ and NATS) verifying authentication flows, authorization boundaries (Player vs. GM), and event pipelines.
 - **Load & Resilience Tests:** Verifying `sheet-aggregator` fan-out latency and graceful degradation when individual `attr-*` services experience latency or failure.
 
 ### 7.3 CI/CD & Developer Experience
