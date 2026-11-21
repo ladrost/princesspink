@@ -1,14 +1,16 @@
 # PrincessPink
 ## Idea
-Human biology simulation with a pen and paper roleplay interface such as AD&D and some comic art to visualize the characters within it.
+Human Reproduction with a pen and paper roleplay interface such as AD&D and some comic art to visualize the face of the characters within it.
 
 ## Goal of the simulation
-The goal of Princess Pink is to create a simulation of human procreation. All character sheets are designed to inform the simulation about the attributes and genetics of the character, such that the simulation is able to simulate the procreation of new character by simulation the biological conception, pregnancy, life and death character. 
+The goal of Princess Pink is to create a simulation of human reproduction in a scientific way without being pornografic or violent. The pen and paper roleplay interface is meant to gamify the simulation and to play with the simulation. 
 
-The simulation will also include some comic art to visualize the character on the character sheet, such that player is able to get an idea of the character he/she is playing.
+## Character sheets
+All character sheets are designed to inform the simulation about the attributes and genetics of the character, such that the simulation is able to simulate the procreation of new character by simulating the biological conception, life and death of every character. The simulation will show no pictures of violence or nudity.
+The simulation will only include some comic art to visualize the face of the characters on the character sheet, such that players are able to get an idea of the character he/she is playing.
 
-## No violence
-The simulation will not include any violence, gore or other content that may be considered offensive or inappropriate. This is the big difference to other role play games like AD&D or World of Warcraft. Princess Pink is NOT about killing others or monsters. It is only about human beings and procreating new humans. It is a population simulation not an adventure role playing game.
+## No violence, no nudity
+The simulation will not include any violence, gore, nudity or other content that may be considered offensive or inappropriate. This is the big difference to other role play games like AD&D or World of Warcraft. Princess Pink is NOT about killing others or monsters. It is also not about nudity. It is only about human beings and reproduction of human life. It is a population simulation not an adventure role playing game.
 
 ## Architecture
 Microservices written in Go and deployed on Kubernetes running on Microsoft Azure using the AKS service.
