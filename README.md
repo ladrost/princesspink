@@ -56,12 +56,12 @@ PrincessPink enforces a strict, non-negotiable **zero-violence, zero-nudity** po
 | :--- | :--- |
 | **Language & Workspace** | Go 1.27+ (`go.work` multi-module workspace, independent semantic versioning per service) |
 | **Frontend Microservices** | Go + **Gin** HTTP framework (`frontend-gateway`, `frontend-sheets`, `frontend-gm`, `frontend-chat`, `portrait-renderer`) with server-rendered HTML/HTMX and authenticated WebSockets (`wss://`) |
-| **Internal Communication** | **gRPC / Protocol Buffers** (`pkg/proto`) for synchronous RPC & parallel attribute fan-out; **NATS JetStream** (or Azure Service Bus) for simulation ticks, lifecycle events, and chat pub/sub |
+| **Internal Communication** | **gRPC / Protocol Buffers** (`pkg/proto`, [ADR-0005](docs/architecture/ADR-0005-shared-grpc-protobuf-contracts.md)) for synchronous RPC & parallel attribute fan-out; **NATS JetStream** (or Azure Service Bus) for simulation ticks, lifecycle events, and chat pub/sub |
 | **User Administration & Security** | `user-admin` backed by **PostgreSQL 18+** with `Argon2id` password hashing, MFA (TOTP / WebAuthn), RBAC (`PLAYER` / `GAME_MASTER`), TLS 1.3 / mTLS, and immutable audit logging |
 | **Character Sheet & Attributes** | `character-registry`, `sheet-aggregator` (concurrent `errgroup` fan-out with graceful degradation and tick-based caching), and dedicated `attr-*` microservices |
 | **Simulation & Genetics Engine** | Event-driven Go microservices (`sim-clock`, `sim-egg-reserve`, `sim-egg-selection`, `sim-menarche`, `sim-menstruation`, `sim-ejaculation`, `sim-sperm-race`, `sim-gamete-surface`, `sim-conception`, `sim-dna`, `sim-birth-date`, `sim-gestation`, `sim-mortality`, `sim-lifecycle`) using **SQLite** for scientific reference data, per-female egg-reserve databases, and per-ejaculation sperm-cell artifacts |
 | **Real-Time Chat** | `frontend-chat` + `chat-service` + `chat-world-registry` with player-selectable World Chat Servers (`chat.world.<world_server_id>`), PostgreSQL 18+ persistence (`chat.*` schema), NATS JetStream fan-out, rate limiting, and content-policy moderation ([ADR-0002](docs/architecture/ADR-0002-world-chat-microservices-and-server-selection.md)) |
-| **Observability & Quality** | **OpenTelemetry** tracing, `log/slog` structured JSON logging, Prometheus metrics, deterministic fixed-seed simulation tests, `golangci-lint`, `govulncheck`, and Trivy container scanning |
+| **Observability & Quality** | **OpenTelemetry** tracing ([ADR-0004](docs/architecture/ADR-0004-shared-opentelemetry-observability.md)), `log/slog` structured JSON logging ([ADR-0003](docs/architecture/ADR-0003-shared-logging-library.md)), Prometheus metrics, deterministic fixed-seed simulation tests, `golangci-lint`, `govulncheck`, and Trivy container scanning (`Makefile` [ADR-0008](docs/architecture/ADR-0008-multi-module-makefile-build-automation.md) & GitHub Actions [ADR-0009](docs/architecture/ADR-0009-github-actions-ci-cd.md)) |
 | **Deployment Target** | Hardened non-root `distroless/static` containers on **Microsoft Azure Kubernetes Service (AKS)** with Azure Database for PostgreSQL Flexible Server (18+), ACR, and Key Vault |
 
 For full entity-relationship models, architecture diagrams, SQLite deployment patterns, and service catalogs, see the [Technical Concept](docs/Concept.md).
@@ -108,7 +108,7 @@ cd princesspink
 
 ### Developer Workflow (`Makefile`)
 
-The repository provides a multi-module `Makefile` supporting workspace-wide commands as well as single-service scoping via `SERVICE=<service-name>`:
+The repository provides a multi-module `Makefile` (see [ADR-0008](docs/architecture/ADR-0008-multi-module-makefile-build-automation.md)) supporting workspace-wide commands as well as single-service scoping via `SERVICE=<service-name>`:
 
 ```bash
 # List all available targets and examples
@@ -135,7 +135,7 @@ make versions
 
 PrincessPink is currently in **Phase 0 / Architectural Foundation**. Planned implementation phases (detailed in [docs/Concept.md](docs/Concept.md#9-phased-implementation-roadmap)):
 
-1. **Phase 1 — Platform Foundation:** Shared `pkg/` libraries (logging, OpenTelemetry, gRPC contracts, config, UUID utilities), CI workflows, and `user-admin` with PostgreSQL, Argon2id auth, RBAC, and Group management.
+1. **Phase 1 — Platform Foundation:** Shared `pkg/` libraries (logging [ADR-0003](docs/architecture/ADR-0003-shared-logging-library.md), OpenTelemetry [ADR-0004](docs/architecture/ADR-0004-shared-opentelemetry-observability.md), gRPC contracts [ADR-0005](docs/architecture/ADR-0005-shared-grpc-protobuf-contracts.md), config [ADR-0006](docs/architecture/ADR-0006-shared-configuration-library.md), UUID utilities [ADR-0007](docs/architecture/ADR-0007-shared-uuid-utilities.md)), `Makefile` ([ADR-0008](docs/architecture/ADR-0008-multi-module-makefile-build-automation.md)), GitHub Actions CI ([ADR-0009](docs/architecture/ADR-0009-github-actions-ci-cd.md)), and `user-admin` with PostgreSQL, Argon2id auth, RBAC, and Group management.
 2. **Phase 2 — Character Sheet, Chat & Frontend MVP:** `frontend-gateway`, `frontend-sheets`, `frontend-gm`, `frontend-chat`, `chat-service`, `chat-world-registry` (player-selectable World Chat Servers, Group Chat, and 1-to-1 Direct Messages), `character-registry`, `sheet-aggregator`, initial `attr-*` microservices, and `portrait-renderer`.
 3. **Phase 3 — Core Reproduction Simulation Pipeline:** `sim-clock`, `sim-egg-reserve`, `sim-egg-selection`, `sim-menarche`, `sim-menstruation`, `sim-ejaculation`, `sim-sperm-race`, `sim-gamete-surface`, `sim-conception`, and `sim-dna` with SQLite stores, event bus integration, and fixed-seed cohort tests.
 4. **Phase 4 — Full Lifecycle & Population Features:** `sim-birth-date`, `sim-gestation`, `sim-mortality`, `sim-lifecycle`, multi-generational family trees, and Game Master population analytics.
@@ -147,7 +147,16 @@ PrincessPink is currently in **Phase 0 / Architectural Foundation**. Planned imp
 
 - **[Technical Concept (`docs/Concept.md`)](docs/Concept.md)** — Full domain model, ER & sequence diagrams, character lifecycle, gamete DNA & SQLite architecture, microservice catalog, chat design, Azure AKS topology, and glossary.
 - **[API Specifications (`docs/api/`)](docs/api/)** — OpenAPI and Protobuf contract documentation (planned).
-- **[Architecture Docs (`docs/architecture/`)](docs/architecture/)** — ADRs and infrastructure specifications, including [ADR-0001: Minimum PostgreSQL Version (PostgreSQL 18+)](docs/architecture/ADR-0001-minimum-postgresql-version.md) and [ADR-0002: World Chat in a Microservice Environment & Player World Chat Server Selection](docs/architecture/ADR-0002-world-chat-microservices-and-server-selection.md).
+- **[Architecture Docs (`docs/architecture/`)](docs/architecture/)** — Architecture Decision Records (ADRs) and infrastructure specifications:
+  - [ADR-0001: Minimum PostgreSQL Version (PostgreSQL 18+)](docs/architecture/ADR-0001-minimum-postgresql-version.md)
+  - [ADR-0002: World Chat in a Microservice Environment & Player World Chat Server Selection](docs/architecture/ADR-0002-world-chat-microservices-and-server-selection.md)
+  - [ADR-0003: Shared Structured Logging Library (`pkg/logging`)](docs/architecture/ADR-0003-shared-logging-library.md)
+  - [ADR-0004: Shared OpenTelemetry & Observability Library (`pkg/telemetry`)](docs/architecture/ADR-0004-shared-opentelemetry-observability.md)
+  - [ADR-0005: Shared gRPC & Protocol Buffers Contracts (`pkg/proto`)](docs/architecture/ADR-0005-shared-grpc-protobuf-contracts.md)
+  - [ADR-0006: Shared Configuration Library (`pkg/config`)](docs/architecture/ADR-0006-shared-configuration-library.md)
+  - [ADR-0007: Shared UUID Utilities Library (`pkg/uuid`)](docs/architecture/ADR-0007-shared-uuid-utilities.md)
+  - [ADR-0008: Multi-Module Developer Workflow & Build Automation (`Makefile`)](docs/architecture/ADR-0008-multi-module-makefile-build-automation.md)
+  - [ADR-0009: GitHub Actions CI/CD Architecture (`.github/workflows/`)](docs/architecture/ADR-0009-github-actions-ci-cd.md)
 - **[Operational Runbooks (`docs/runbooks/`)](docs/runbooks/)** — Deployment, backup, and incident response runbooks (planned).
 
 ---
