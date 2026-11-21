@@ -26,9 +26,13 @@ PrincessPink strictly enforces a **zero-violence, zero-nudity** policy:
 erDiagram
     USER ||--o{ GROUP_MEMBERSHIP : "belongs to"
     GROUP ||--o{ GROUP_MEMBERSHIP : "contains"
-    GROUP ||--o{ CHARACTER : "scoped to"
-    USER ||--o{ CHARACTER : "owns / plays"
+    GROUP_MEMBERSHIP }o--o| CHARACTER : "selects 1 active PC at start"
+    GROUP ||--o{ CHARACTER : "origin / hosts as NPC"
+    USER |o--o{ CHARACTER : "owns (0..N roster; null while unowned NPC)"
+    CHARACTER ||--o| OWNERSHIP_AGREEMENT : "child custody agreement"
     USER ||--o{ CHAT_MESSAGE : "sends"
+    USER }o--o| WORLD_CHAT_SERVER : "selects preferred"
+    WORLD_CHAT_SERVER ||--o{ CHAT_CHANNEL : "hosts world chat"
     GROUP ||--o| CHAT_CHANNEL : "has group chat"
     CHAT_CHANNEL ||--o{ CHAT_MESSAGE : "contains"
     CHARACTER ||--o| GENOME : "has immutable diploid"
@@ -56,9 +60,40 @@ erDiagram
         timestamp created_at
     }
 
+    GROUP_MEMBERSHIP {
+        uuid id PK
+        uuid group_id FK "unique with user_id"
+        uuid user_id FK "unique with group_id"
+        uuid selected_character_id FK "1 owned character selected at group start; origin_group_id != group_id"
+        timestamp joined_at
+    }
+
+    OWNERSHIP_AGREEMENT {
+        uuid id PK
+        uuid character_id FK "conceived/born child"
+        uuid mother_player_id FK
+        uuid father_player_id FK
+        uuid proposed_owner_user_id FK "mother_player_id or father_player_id"
+        string status "PENDING | AGREED | REJECTED"
+        timestamp agreed_at "nullable"
+    }
+
+    WORLD_CHAT_SERVER {
+        uuid id PK
+        string slug UK
+        string display_name
+        string region
+        string language
+        string category "GENERAL | ROLEPLAY | SCIENCE | NEWCOMER"
+        string status "ONLINE | HIGH_LOAD | FULL | MAINTENANCE | DRAINING"
+        int max_capacity
+        timestamp created_at
+    }
+
     CHAT_CHANNEL {
         uuid id PK
         string channel_type "GLOBAL | GROUP | DIRECT"
+        uuid world_server_id FK "nullable, set for GLOBAL (World Chat)"
         uuid group_id FK "nullable, set for GROUP"
         string name
         timestamp created_at
@@ -75,8 +110,8 @@ erDiagram
 
     CHARACTER {
         uuid id PK
-        uuid owner_user_id FK
-        uuid group_id FK
+        uuid owner_user_id FK "nullable while unowned NPC"
+        uuid origin_group_id FK "nullable; group where conceived/born (always NPC here)"
         string name "nullable before birth"
         string gender "FEMALE | MALE"
         string lifecycle_state "CONCEIVED | GESTATING | ALIVE | DECEASED"
@@ -131,9 +166,12 @@ erDiagram
     }
 ```
 
-### 2.2 Roles & Access Boundaries
-- **Player (User):** Authenticated user identified by a unique `UUID`. Players own and play one or more Characters, have read/interaction access to the character sheets of their own characters, and can communicate via **Global Chat**, their assigned **Group Chat(s)**, and private **1-to-1 Direct Messages** with other Players.
-- **Game Master (GM):** Authenticated user who manages one or more **Groups** (simulation worlds/campaigns). A Game Master has visibility into all characters belonging to players within their group(s), controls group-level simulation settings (e.g., simulation clock speed, starting population parameters), and participates in and moderates the **Group Chat** for his/her Group(s) alongside Global Chat and Direct Messages.
+### 2.2 Roles, Character Ownership & Group Participation Rules
+- **Player (User):** Authenticated user identified by a unique `UUID`. A Player may own **multiple Characters** in their personal roster, has read/interaction access to the character sheets of their owned characters, and can communicate via **Global / World Chat**, their assigned **Group Chat(s)**, and private **1-to-1 Direct Messages** with other Players.
+- **Game Master (GM):** Authenticated user who manages one or more **Groups** (simulation worlds/campaigns). A Game Master has visibility into all active player characters and NPC children living within their group(s), controls group-level simulation settings (e.g., simulation clock speed, starting population parameters), and participates in and moderates the **Group Chat** for his/her Group(s) alongside Global / World Chat and Direct Messages.
+- **One Character per Player per Group:** Although a Player may own multiple Characters across their account, **within any single Group a Player plays only one Character**. At the **start of the Group**, each Player selects that single active Character from the Characters they already own (`GROUP_MEMBERSHIP.selected_character_id`).
+- **Children as NPCs & Parental Ownership Agreement:** Every child **conceived or born during a simulation** enters the simulation as an **NPC (Non-Player Character)** with no Player owner (`owner_user_id = null`). The child remains an unowned NPC until the **Players of the mother and the father reach a mutual agreement** (`OWNERSHIP_AGREEMENT`) deciding which of them takes ownership of the child. Once both parents' Players agree, `owner_user_id` is assigned and the child is added to that Player's personal character roster.
+- **Future-Group-Only Playability for Children:** Even after parental ownership is agreed and assigned to a Player, **a child can never be played as a Player Character in the Group where the mother and father live** (`origin_group_id`). Within that origin Group, the child continues to live strictly as an NPC; the owning Player may only select and play that child in a **future Group** at the start of that new Group.
 
 ### 2.3 Agent / Character Lifecycle
 Every Agent in the simulation is a **Character** assigned a globally unique, immutable **UUID** at the moment of conception. That UUID remains the canonical identifier for the character across all phases of existence:
@@ -148,8 +186,8 @@ stateDiagram-v2
     DECEASED --> [*] : Permanent historical record
 ```
 
-- **Before Birth (`CONCEIVED`, `GESTATING`):** The character already exists in the system with a UUID, immutable diploid DNA, determined biological `gender` (`FEMALE` or `MALE`), and mother/father references. `date_of_birth` and `date_of_death` are `null`. Players may optionally assign or reserve a name prior to or at birth.
-- **During Life (`ALIVE`):** Upon birth, `date_of_birth` is recorded permanently. The character participates in the simulation, ages with simulation time, exposes full core and gender-specific character sheet attributes, and can reproduce according to biological rules.
+- **Before Birth (`CONCEIVED`, `GESTATING`):** The character already exists in the system with a UUID, immutable diploid DNA, determined biological `gender` (`FEMALE` or `MALE`), `origin_group_id`, and mother/father references. `date_of_birth` and `date_of_death` are `null`. Newly conceived children start as **NPCs** (`owner_user_id = null`) until the mother's and father's Players reach an ownership agreement. Players may optionally assign or reserve a name prior to or at birth.
+- **During Life (`ALIVE`):** Upon birth, `date_of_birth` is recorded permanently. The character participates in the simulation, ages with simulation time, exposes full core and gender-specific character sheet attributes, and can reproduce according to biological rules. Children born in a Group live in that Group strictly as **NPCs** (even after parental ownership is agreed) and can only be selected as a playable character by their owning Player in a **future Group**.
 - **After Death (`DECEASED`):** Upon natural mortality, `date_of_death` is recorded permanently. The character record and UUID remain permanently queryable for genealogy, family trees, and genetic heritage analysis.
 
 ### 2.4 Core & Gender-Specific Character Attributes
@@ -223,7 +261,8 @@ flowchart TB
         end
 
         subgraph ChatNS["Namespace: chat"]
-            ChatSvc[Chat Service\nGlobal / Group / 1-to-1 DM]
+            ChatSvc[Chat Service\nWorld / Group / 1-to-1 DM]
+            ChatWorldReg[World Chat Server Registry]
         end
 
         subgraph SheetNS["Namespace: character-sheet"]
@@ -267,9 +306,13 @@ flowchart TB
 
     AuthGW --> UserAdmin
     ChatUI --> ChatSvc
+    ChatUI --> ChatWorldReg
+    ChatSvc --> ChatWorldReg
     ChatSvc --> UserAdmin
     ChatSvc --> PG
+    ChatWorldReg --> PG
     EventBus <--> ChatSvc
+    EventBus <--> ChatWorldReg
     UserAdmin --> PG
     CharReg --> PG
 
@@ -312,8 +355,9 @@ princesspink/
 │   ├── frontend-gateway/
 │   ├── frontend-sheets/
 │   ├── frontend-gm/
-│   ├── frontend-chat/       # In-app chat UI & WebSocket edge gateway
-│   ├── chat-service/        # Global, Group (GM + Players), and 1-to-1 DM chat service
+│   ├── frontend-chat/       # In-app chat UI, World Server selector & WebSocket edge gateway
+│   ├── chat-service/        # World, Group (GM + Players), and 1-to-1 DM chat service
+│   ├── chat-world-registry/ # World Chat Server directory, live occupancy & server selection
 │   ├── user-admin/
 │   ├── character-registry/
 │   ├── sheet-aggregator/
@@ -363,9 +407,9 @@ The frontend is composed of multiple Go microservices built with the **Gin** HTT
 | Service | Responsibilities |
 | :--- | :--- |
 | `frontend-gateway` | Edge routing, authentication/session management (interacting with `user-admin`), CSRF protection, rate limiting, and authorization context injection. |
-| `frontend-sheets` | Renders the pen-and-paper character sheet UI, displays player-owned characters, handles character naming, and triggers allowed player actions. |
-| `frontend-gm` | Game Master portal for managing groups, inviting/assigning players, inspecting all group characters, and configuring simulation clock parameters. |
-| `frontend-chat` | Renders the in-app chat interface (Global Chat, Group Chat, and 1-to-1 Direct Messages) and manages authenticated WebSocket connections to `chat-service`. |
+| `frontend-sheets` | Renders the pen-and-paper character sheet UI, displays the Player's multi-character roster, handles single-character selection at Group start, character naming, parental child-ownership agreements, and allowed player actions. |
+| `frontend-gm` | Game Master portal for managing groups, inviting/assigning players, verifying group-start character selections, inspecting all group player characters and NPC children, and configuring simulation clock parameters. |
+| `frontend-chat` | Renders the in-app chat interface (Global / World Chat with World Chat Server selector, Group Chat, and 1-to-1 Direct Messages) and manages authenticated WebSocket connections to `chat-service` and `chat-world-registry`. |
 | `portrait-renderer` | Generates and serves comic-style face portraits (SVG or rasterized PNG/WebP) from a character's phenotypic facial traits and age stage. |
 
 **UI/UX Design Principles:**
@@ -380,16 +424,16 @@ The `user-admin` microservice is the authoritative source of identity, group mem
 #### Core Responsibilities
 - User registration, login, logout, password reset, and profile management.
 - Issuing and validating authentication credentials (UUID-keyed user identities).
-- Managing Groups (campaigns) and Game Master / Player memberships.
-- Answering authorization queries (e.g., *"Can User `U` view/act on Character `C`?"*).
+- Managing Groups (campaigns), Game Master / Player memberships, and enforcing the **one-character-per-player-per-group** selection rule at Group start.
+- Answering authorization queries (e.g., *"Can User `U` view/act on Character `C`?"*, *"Can User `U` select Character `C` for Group `G`?"*).
 
 #### State-of-the-Art Security Measures
 - **Password Hashing:** `Argon2id` with per-user cryptographically random salts and tuned memory/iteration parameters.
 - **Authentication & Sessions:** OAuth 2.0 / OpenID Connect (OIDC) compatible token flow or secure, `HttpOnly`, `Secure`, `SameSite=Strict` session cookies paired with short-lived signed JWTs (Ed25519 / RS256) and rotating refresh tokens with reuse detection.
 - **Multi-Factor Authentication (MFA):** Support for TOTP (RFC 6238) and optional WebAuthn/Passkeys, strongly recommended for Game Masters.
 - **Authorization Model (RBAC + Ownership/Group Scoping):**
-  - `PLAYER`: Read/play access strictly to characters where `character.owner_user_id == current_user.id`.
-  - `GAME_MASTER`: Read/supervisory access to all characters where `character.group_id IN managed_groups(current_user.id)`.
+  - `PLAYER`: Read/roster access to all characters where `character.owner_user_id == current_user.id`; within any Group `G`, active play access is restricted to the single Character selected by the Player at the start of Group `G` (`GROUP_MEMBERSHIP.selected_character_id`), which must be already owned by the Player and **must not** have been conceived/born in Group `G` (`character.origin_group_id != G`). Players of a child's biological mother and father may also initiate and confirm the child's `OWNERSHIP_AGREEMENT` while the child is an unowned NPC (`owner_user_id == null`).
+  - `GAME_MASTER`: Read/supervisory access to all active player characters and NPC children living in `managed_groups(current_user.id)`.
   - Enforcement occurs at both `frontend-gateway` (coarse-grained) and backend services such as `sheet-aggregator` / `character-registry` (fine-grained defense in depth).
 - **Transport & Service Security:** TLS 1.3 externally; mTLS internally between Kubernetes pods.
 - **Audit Logging:** Immutable audit trail in PostgreSQL recording authentication events, role/group changes, and GM access to player character sheets.
@@ -400,7 +444,7 @@ The `user-admin` microservice is the authoritative source of identity, group mem
 To maximize modularity, independent scaling, and scientific maintainability, **each attribute or derived value displayed on a character sheet is computed by a dedicated Go microservice**.
 
 #### Components
-1. **Character Registry (`character-registry`):** Owns the canonical character record (`UUID`, `owner_user_id`, `group_id`, player-assigned `name`, `gender`, `lifecycle_state`, `date_of_birth`, `date_of_death`, `mother_uuid`, `father_uuid`, and immutable diploid genome reference) in PostgreSQL.
+1. **Character Registry (`character-registry`):** Owns the canonical character record (`UUID`, nullable `owner_user_id`, `origin_group_id`, player-assigned `name`, `gender`, `lifecycle_state`, `date_of_birth`, `date_of_death`, `mother_uuid`, `father_uuid`, and immutable diploid genome reference) and parental child-ownership agreements (`OWNERSHIP_AGREEMENT`) in PostgreSQL. Enforces that conceived/born children start as unowned NPCs, transitions ownership only upon mutual agreement between the mother's and father's Players, and prevents a child from being selected as a playable character in its `origin_group_id`.
 2. **Character Sheet Aggregator (`sheet-aggregator`):**
    - Receives a sheet request for `character_uuid` (after verifying Player/GM authorization).
    - Fetches canonical metadata (including `gender`, `date_of_birth`, `date_of_death`, `lifecycle_state`) from `character-registry` and executes a **concurrent parallel fan-out** (via Go `errgroup` + gRPC with strict per-call deadlines) to all applicable universal and **gender-specific** Attribute Microservices.
@@ -500,7 +544,7 @@ sequenceDiagram
     alt Fertilization Succeeds
         Conc->>DNA: Combine egg haploid DNA (mother) + sperm haploid DNA (father)
         DNA-->>DNA: Compute diploid 23-pair DNA & gender (XX/XY)
-        Conc->>Reg: Allocate Character UUID (state = CONCEIVED, gender, mother_uuid, father_uuid)
+        Conc->>Reg: Allocate Character UUID (state = CONCEIVED, gender, mother_uuid, father_uuid, owner = NULL [NPC], origin_group_id)
         DNA-->>Reg: Persist immutable diploid DNA & update state = GESTATING
         DNA->>Gest: sim.dna.calculated (start gestation tracking)
         Gest->>BDate: Calculate date_of_birth (from mother's last menstruation OR conception date)
@@ -527,23 +571,24 @@ sequenceDiagram
 ---
 
 ### 4.5 Real-Time Chat & Communication Microservices
-PrincessPink provides an integrated, real-time **Chat** system (`frontend-chat` + `chat-service`) designed for tabletop RPG coordination and community interaction across the simulation.
+PrincessPink provides an integrated, real-time **Chat** system (`frontend-chat` + `chat-service` + `chat-world-registry`) designed for tabletop RPG coordination and community interaction across the simulation.
 
 #### Supported Chat Channels
-1. **Global Chat (World of Warcraft-Style):**
-   - A simulation-wide public chat channel accessible to all authenticated Players and Game Masters, modeled on the classic World of Warcraft Global / General chat experience (familiar channel tabs, slash-command routing such as `/global` or `/1`, timestamps, and user display names).
-   - Enables players across different groups to discuss simulation mechanics, genetics, lineage milestones, and community topics.
+1. **Global / World Chat (World of Warcraft-Style with Player-Selectable Servers):**
+   - Realized through **logical World Chat Servers** managed by `chat-world-registry` (see [ADR-0002](architecture/ADR-0002-world-chat-microservices-and-server-selection.md)), modeled on the classic World of Warcraft realm/world chat experience (familiar channel tabs, slash-command routing such as `/world`, `/global`, `/1`, `/servers`, `/world join <slug>`, timestamps, and user display names).
+   - Players and Game Masters browse available World Chat Servers filtered by **language**, **region**, **category** (`GENERAL`, `ROLEPLAY`, `SCIENCE`, `NEWCOMER`), **status**, and live **population band** (`LOW`, `MEDIUM`, `HIGH`, `FULL`), and select or switch their preferred World Chat Server at any time without disconnecting their WebSocket session or interrupting Group Chat and Direct Messages.
+   - Enables players across different groups to discuss simulation mechanics, genetics, lineage milestones, and community topics without turning global chat into an unpartitioned firehose.
 2. **Group Chat (Game Master & Group Members):**
    - A private channel scoped strictly to a single **Group**, connecting the **Game Master** and all **Players** belonging to his/her Group (e.g., `/group` or `/g`).
    - Supports in-campaign coordination, GM announcements, simulation-clock notifications, and collaborative tabletop storytelling. Membership is enforced on every connection and message via `user-admin`.
 3. **Direct Message Chat (1-to-1 Player Messaging):**
-   - Private **1-to-1 messaging** between any two Players (e.g., `/whisper <player>` or `/w <player>`), allowing bilateral negotiation, lineage planning, or private conversation without exposing messages to Global or Group channels.
+   - Private **1-to-1 messaging** between any two Players (e.g., `/whisper <player>` or `/w <player>`), allowing bilateral negotiation (such as agreeing on ownership of a conceived or born child), lineage planning, or private conversation without exposing messages to Global / World or Group channels.
    - Strict participant-only read/write authorization ensures only the sender and recipient can view direct message threads.
 
 #### Chat Architecture, Delivery & Safety
-- **Transport & Fan-Out:** `frontend-chat` terminates authenticated WebSocket (`wss://`) connections (validated via `frontend-gateway` / `user-admin` session tokens) and streams messages to `chat-service` over gRPC. `chat-service` publishes incoming messages to NATS JetStream subjects (`chat.global`, `chat.group.<group_id>`, `chat.dm.<pair_id>`) so multiple horizontally scaled pods deliver messages in real time.
-- **Persistence:** Channel definitions, message history, read markers, and user mute/block lists are stored in central PostgreSQL under the `chat.*` schema with cursor-based pagination.
-- **Content Policy & Moderation:** In strict alignment with PrincessPink's **zero-violence, zero-nudity** policy, `chat-service` enforces automated content filtering, per-user rate limiting (anti-spam), player mute/block/report actions, and Game Master moderation capabilities within their own Group Chat.
+- **Transport, Server Discovery & Fan-Out:** `frontend-chat` terminates a single authenticated WebSocket (`wss://`) connection per client (validated via `frontend-gateway` / `user-admin`), queries `chat-world-registry` for live World Chat Server discovery/occupancy, and streams messages and `SwitchWorldServer` requests to `chat-service` over gRPC. `chat-service` publishes incoming messages to partitioned NATS JetStream subjects (`chat.world.<world_server_id>`, `chat.group.<group_id>`, `chat.dm.<pair_id>`) so horizontally scaled pods deliver messages in real time and live World Chat Server switches occur atomically without dropping the WebSocket or disrupting Group/DM streams.
+- **Persistence:** World Chat Server definitions (`chat.world_servers`), per-user selected server preferences (`chat.user_world_preferences`), channel definitions, `uuidv7()`-keyed message history, read markers, and user mute/block lists are stored in central PostgreSQL 18+ under the `chat.*` schema with cursor-based pagination.
+- **Content Policy & Moderation:** In strict alignment with PrincessPink's **zero-violence, zero-nudity** policy, `chat-service` enforces automated content filtering, per-user message and server-switch rate limiting (anti-spam / anti-hopping), globally enforced player mute/block/report actions across all World Chat Servers, and Game Master moderation capabilities within their own Group Chat.
 
 ---
 
@@ -552,11 +597,12 @@ PrincessPink provides an integrated, real-time **Chat** system (`frontend-chat` 
 PrincessPink uses a **polyglot persistence strategy** aligned with service ownership:
 
 ### 5.1 Central PostgreSQL (Authoritative Transactional Data)
-Hosted on **Azure Database for PostgreSQL (Flexible Server)** with automated backups, point-in-time recovery (PITR), and high availability.
+Hosted on **Azure Database for PostgreSQL (Flexible Server)** running **PostgreSQL 18+** (minimum supported version; see [ADR-0001](architecture/ADR-0001-minimum-postgresql-version.md)) with automated backups, point-in-time recovery (PITR), and high availability.
+- **Minimum Version Rationale (`PostgreSQL 18+`):** Generally Available across all Azure public regions with upstream security support through November 2030, providing native `uuidv7()` for PrincessPink's UUID-everywhere primary keys and cursor-paginated chat/audit/outbox tables, `RETURNING OLD/NEW` for atomic audit trails, SQL/JSON functions for `jsonb` (`simulation_config`), B-tree skip scans, Asynchronous I/O (`worker` mode on Azure), and hardened security (`SCRAM-SHA-256`, TLS 1.3, OAuth 2.0 / Microsoft Entra ID).
 - **Owned Domains:**
-  - `user-admin`: Users, credentials (Argon2id hashes), MFA secrets, sessions/refresh tokens, groups, memberships, RBAC policies, and audit logs.
-  - `character-registry`: Character UUIDs, player ownership, group association, player-given names, `gender`, `date_of_birth`, `date_of_death`, `lifecycle_state`, gender-specific milestone history (such as `date_of_first_menstruation` and `menstruation_dates`), ovarian Egg-Reserve SQLite DB links (mapped to female `character_uuid`), mother/father lineage links, and immutable diploid genome records (or references).
-  - `chat-service`: Chat channels (`GLOBAL`, `GROUP`, `DIRECT`), message history, participant metadata, mute/block lists, and moderation audit logs.
+  - `user-admin`: Users, credentials (Argon2id hashes), MFA secrets, sessions/refresh tokens, groups, memberships (including each Player's single `selected_character_id` chosen at Group start), RBAC policies, and audit logs.
+  - `character-registry`: Character UUIDs, nullable player ownership (`owner_user_id`), `origin_group_id`, parental child-ownership agreements (`OWNERSHIP_AGREEMENT`), player-given names, `gender`, `date_of_birth`, `date_of_death`, `lifecycle_state`, gender-specific milestone history (such as `date_of_first_menstruation` and `menstruation_dates`), ovarian Egg-Reserve SQLite DB links (mapped to female `character_uuid`), mother/father lineage links, and immutable diploid genome records (or references).
+  - `chat-service` & `chat-world-registry`: World Chat Server catalog, per-user server preferences, chat channels (`GLOBAL`, `GROUP`, `DIRECT`), message history, participant metadata, mute/block lists, and moderation audit logs (see [ADR-0002](architecture/ADR-0002-world-chat-microservices-and-server-selection.md)).
 - **Schema Isolation:** Logical separation via dedicated PostgreSQL schemas (e.g., `user_admin.*`, `character_registry.*`, `chat.*`) with per-service database credentials and least-privilege grants.
 
 ### 5.2 Local SQLite in Simulation Microservices
@@ -599,7 +645,7 @@ PrincessPink runs on **Azure Kubernetes Service (AKS)** with workload isolation 
 - `ingress` — Ingress controller (e.g., NGINX or Azure Application Gateway for Containers) and TLS termination (cert-manager / Azure Key Vault).
 - `frontend` — Gin web microservices (`frontend-gateway`, `frontend-sheets`, `frontend-gm`, `frontend-chat`, `portrait-renderer`).
 - `user-admin` — Authentication, user, and group administration services.
-- `chat` — Real-time messaging service (`chat-service`) handling Global Chat, Group Chat, and 1-to-1 Direct Messages.
+- `chat` — Real-time messaging services (`chat-service` and `chat-world-registry`) handling player-selectable World Chat Servers, Group Chat, and 1-to-1 Direct Messages (see [ADR-0002](architecture/ADR-0002-world-chat-microservices-and-server-selection.md)).
 - `character-sheet` — `character-registry`, `sheet-aggregator`, and all `attr-*` microservices.
 - `simulation` — Biological simulation microservices (`sim-clock`, `sim-egg-reserve`, `sim-egg-selection`, `sim-menarche`, `sim-menstruation`, `sim-ejaculation`, `sim-sperm-race`, `sim-gamete-surface`, `sim-conception`, `sim-dna`, `sim-birth-date`, `sim-gestation`, `sim-mortality`, `sim-lifecycle`).
 - `messaging` — Event broker (if running NATS JetStream in-cluster).
@@ -608,7 +654,7 @@ PrincessPink runs on **Azure Kubernetes Service (AKS)** with workload isolation 
 ### 6.2 Azure Managed Services Integration
 - **Azure Kubernetes Service (AKS):** Managed control plane, separate system and user node pools, cluster autoscaler.
 - **Azure Container Registry (ACR):** Private registry for signed Go distroless/scratch container images.
-- **Azure Database for PostgreSQL Flexible Server:** Managed central relational database with private VNet integration.
+- **Azure Database for PostgreSQL Flexible Server (PostgreSQL 18+):** Managed central relational database (minimum version PostgreSQL 18 per [ADR-0001](architecture/ADR-0001-minimum-postgresql-version.md)) with private VNet integration and Microsoft Entra ID authentication.
 - **Azure Key Vault + Secrets Store CSI Driver:** Centralized storage and automatic rotation of database credentials, JWT signing keys, and TLS certificates.
 - **Azure Monitor & Log Analytics:** Unified metrics, logs, and alerting.
 
@@ -632,7 +678,7 @@ PrincessPink runs on **Azure Kubernetes Service (AKS)** with workload isolation 
 - **Unit Tests:** Pure Go tests for biological formulas, genetic crossover/recombination math, hormonal curves, and RBAC rules.
 - **Deterministic Simulation Tests:** Fixed-seed end-to-end reproduction scenarios verifying statistical invariants (e.g., Mendelian ratios, expected sex-chromosome distribution ~50/50 over large cohorts, cycle duration bounds).
 - **Contract Tests:** Protobuf schema compatibility checks (`buf breaking`) and OpenAPI validation stored under `docs/api/`.
-- **Integration Tests:** Containerized tests (e.g., Testcontainers with PostgreSQL and NATS) verifying authentication flows, authorization boundaries (Player vs. GM), and event pipelines.
+- **Integration Tests:** Containerized tests (e.g., Testcontainers with PostgreSQL 18+ and NATS) verifying authentication flows, authorization boundaries (Player vs. GM), and event pipelines.
 - **Load & Resilience Tests:** Verifying `sheet-aggregator` fan-out latency and graceful degradation when individual `attr-*` services experience latency or failure.
 
 ### 7.3 CI/CD & Developer Experience
@@ -650,7 +696,7 @@ PrincessPink runs on **Azure Kubernetes Service (AKS)** with workload isolation 
 | **Local SQLite concurrency & scaling in Kubernetes** | Write-lock contention or data loss if deployed naively across multiple replicas. | Restrict horizontal `Deployment` scaling to immutable read-only SQLite reference DBs; use single-writer `StatefulSet` + PVC (or migrate mutable state to PostgreSQL) for writable stores. |
 | **Per-female Egg-Reserve SQLite DB size & lifecycle management** | Generating and retaining a dedicated SQLite database of all birth egg cells linked to each female character's `UUID` can grow storage across large multi-generational populations. | Use compact binary chromosome encoding, configurable biological cohort scaling per group, indexed `status` queries for `sim-egg-selection`, per-`character_uuid` locking, and archival/TTL cleanup after menopause or `DECEASED`. |
 | **Per-ejaculation SQLite DB size & storage growth** | Simulating millions of individual sperm cells with haploid DNA per ejaculation can create large files and high I/O. | Use compact binary chromosome encoding, configurable statistical cohort scaling per group, batched single-transaction writes on ephemeral storage, and automated TTL cleanup/archival to Azure Blob Storage once `sim-sperm-race` finishes. |
-| **Chat moderation & cross-group leakage** | Real-time Global, Group, and 1-to-1 Direct Message chat could expose inappropriate content or leak private group messages. | Enforce RBAC and group-membership checks via `user-admin` on every subscription/message, apply automated zero-violence/zero-nudity content filters, rate limiting, player mute/block/report tools, and GM moderation controls in Group Chat. |
+| **Chat moderation, cross-group leakage & world-server hot-spotting** | Real-time World, Group, and 1-to-1 Direct Message chat could expose inappropriate content, leak private group messages, or overload a single global channel. | Partition World Chat into player-selectable logical World Chat Servers (`chat-world-registry` + `chat.world.<world_server_id>` per [ADR-0002](architecture/ADR-0002-world-chat-microservices-and-server-selection.md)), enforce RBAC/group checks via `user-admin`, apply automated zero-violence/zero-nudity filters, message & server-switch rate limiting, globally scoped mute/block/report tools, and GM moderation controls in Group Chat. |
 | **Authorization leaks between Players and Groups** | Unauthorized access to another player's character sheet. | Enforce UUID-based ownership and group checks in both `frontend-gateway` and backend services, backed by automated authorization integration tests. |
 | **Content policy violations** | Accidental introduction of inappropriate visuals or descriptions. | Deterministic face-only comic portrait generator (no arbitrary image uploads) and strict schema-driven text/attribute rendering. |
 | **Scientific complexity vs. playability** | Overly opaque simulation parameters reducing RPG enjoyment. | Decouple scientific simulation models (`sim-*`) from gamified presentation (`attr-*` and `frontend-*`), exposing clear RPG-style summaries with optional scientific drill-down. |
@@ -663,7 +709,7 @@ PrincessPink runs on **Azure Kubernetes Service (AKS)** with workload isolation 
    - Establish shared `pkg/` libraries (logging, OpenTelemetry, gRPC contracts, config, UUID utilities), `Makefile`, and GitHub Actions CI.
    - Implement `user-admin` with PostgreSQL, Argon2id auth, Player/GM roles, and Group management.
 2. **Phase 2 — Character Sheet, Chat & Frontend MVP**
-   - Implement `frontend-gateway`, `frontend-sheets`, `frontend-gm`, `frontend-chat` (Go + Gin), and `chat-service` (World of Warcraft-style Global Chat, GM/Group Chat, and 1-to-1 Player Direct Messages).
+   - Implement `frontend-gateway`, `frontend-sheets`, `frontend-gm`, `frontend-chat` (Go + Gin), `chat-service`, and `chat-world-registry` (World of Warcraft-style player-selectable World Chat Servers, GM/Group Chat, and 1-to-1 Player Direct Messages per [ADR-0002](architecture/ADR-0002-world-chat-microservices-and-server-selection.md)).
    - Implement `character-registry`, `sheet-aggregator`, initial set of `attr-*` microservices, and the deterministic `portrait-renderer`.
 3. **Phase 3 — Core Reproduction Simulation Pipeline**
    - Implement `sim-clock`, `sim-egg-reserve` (UUID-linked birth Egg-Cell SQLite DB), `sim-egg-selection` (next-cycle egg selection), `sim-menarche` (first menstruation calculation), `sim-menstruation`, `sim-ejaculation`, `sim-sperm-race`, `sim-gamete-surface`, `sim-conception`, and `sim-dna` with local SQLite reference databases and event bus integration.
@@ -677,19 +723,21 @@ PrincessPink runs on **Azure Kubernetes Service (AKS)** with workload isolation 
 
 ## 10. Glossary
 
-- **Agent / Character:** An individual simulated human within PrincessPink. Every agent in the simulation is a character, similar to a character in a pen-and-paper RPG. Each character has a globally unique, permanent **UUID** that identifies it before birth (from conception), during life, and after death, along with core attributes (`gender`, `date_of_birth`, `date_of_death`) and gender-specific biological attributes. Characters are linked to a Player who owns and plays them.
+- **Agent / Character:** An individual simulated human within PrincessPink. Every agent in the simulation is a character, similar to a character in a pen-and-paper RPG. Each character has a globally unique, permanent **UUID** that identifies it before birth (from conception), during life, and after death, along with core attributes (`gender`, `date_of_birth`, `date_of_death`) and gender-specific biological attributes. Characters may be owned by a Player (who can own multiple characters) or exist as an unowned **NPC** (such as a child conceived or born during a simulation before parental ownership is agreed).
 - **Character Sheet:** The gamified, tabletop-RPG-inspired view of a character's identity (name, UUID, gender, date of birth, date of death), comic face portrait, dynamic appearance traits (`eye_color`, `hair_color`, `skin_color`), 6 AD&D-style reproduction attributes, and universal plus gender-specific biological/genetic attributes. Each displayed attribute is calculated by a dedicated microservice.
-- **Chat Channels (Global, Group, Direct Message):** Real-time communication channels powered by `chat-service` and `frontend-chat`: **Global Chat** (World of Warcraft-style server-wide channel for all authenticated users), **Group Chat** (private channel for a Game Master and his/her Group), and **Direct Message Chat** (private 1-to-1 messaging between Players).
+- **Chat Channels (Global / World, Group, Direct Message):** Real-time communication channels powered by `chat-service`, `chat-world-registry`, and `frontend-chat`: **Global / World Chat** (World of Warcraft-style community channels partitioned into player-selectable **World Chat Servers**), **Group Chat** (private channel for a Game Master and his/her Group), and **Direct Message Chat** (private 1-to-1 messaging between Players).
 - **Conception:** The biological fertilization event in which a surface-compatible winning sperm cell (confirmed by `sim-gamete-surface`, with its haploid DNA) fuses with a viable egg cell (selected from the mother's Egg-Reserve SQLite database by `sim-egg-selection`, with its haploid DNA), triggering allocation of a new Character UUID and diploid DNA calculation.
 - **DNA (Genome):** The immutable diploid genetic blueprint (23 chromosome pairs) calculated for each newly conceived character by combining the haploid DNA of the mother's egg cell and the haploid DNA of the father's winning sperm cell.
 - **Egg Cell (Oocyte):** A female gamete generated at birth by `sim-egg-reserve` and stored inside the female character's UUID-linked **Egg-Reserve SQLite database**, carrying its own **haploid DNA** (22 autosomes + `X`) calculated via meiosis from her diploid DNA, along with a **surface receptor profile** checked during fertilization. During each post-menarche cycle, `sim-egg-selection` determines which egg cell drops for ovulation.
 - **Egg-Reserve Database:** A dedicated **SQLite database** created at birth by `sim-egg-reserve` and explicitly linked to a female character's `UUID`, storing all simulated egg cells she carries with her at birth and queried each cycle by `sim-egg-selection` to determine which egg cell drops during her next cycle.
 - **Ejaculation Database:** A dedicated, event-scoped **SQLite database** built by `sim-ejaculation` for a male character's ejaculation event, storing all simulated sperm cells in that ejaculation along with their individual haploid DNA (derived from the father's DNA), surface ligand profile, and motility/viability attributes.
 - **Game Master (GM):** A user role responsible for managing a simulation Group (campaign). Game Masters can view all character sheets of players within their group(s), control group-level simulation settings, and participate in and moderate their Group Chat.
-- **Group:** A logical simulation world or campaign managed by a Game Master, grouping Players and their Characters together under a shared simulation clock and dedicated Group Chat.
+- **Group:** A logical simulation world or campaign managed by a Game Master, grouping Players and their Characters together under a shared simulation clock and dedicated Group Chat. Within a Group, each Player plays **only one Character**, selected at the start of the Group from the Characters they already own; children conceived or born in the Group live there as NPCs and can only be played in a future Group.
 - **Menarche (Date of First Menstruation):** A female-specific biological milestone calculated for a young female character by `sim-menarche`, recording the simulated calendar date of her first menstruation, followed by ongoing recorded `menstruation_dates`.
+- **NPC (Non-Player Character) & Child Ownership Agreement:** Children conceived or born during a simulation start as unowned **NPCs** (`owner_user_id = null`) until the Players of the mother and the father reach a mutual **Ownership Agreement** deciding who takes ownership of the child. Even after ownership is assigned, the child remains an NPC in the Group where its mother and father live and can only be selected as a playable character in a **future Group**.
 - **Phenotype:** The observable biological and visual traits of a character (such as facial features, `eye_color`, `hair_color`, `skin_color`, and vitality scores), derived from the character's DNA combined with gender, age, and lifecycle state—including traits that naturally shift after birth and during life.
-- **Player / User:** An authenticated user in PrincessPink identified by a unique **UUID**. Players own and play characters and have access to the character sheets of their owned characters.
+- **Player / User:** An authenticated user in PrincessPink identified by a unique **UUID**. A Player may own multiple Characters in their personal roster, selects **one owned Character** to play at the start of each Group, and has access to the character sheets of their owned characters.
 - **Reproduction Attributes:** Six AD&D-style numeric tabletop stats displayed on every character sheet—**Fertility (`FER`)**, **Constitution (`CON`)**, **Vitality (`VIT`)**, **Hormonal Balance (`HOR`)**, **Receptivity (`REC`)**, and **Compatibility (`COM`)**—whose derived modifiers affect the probability and mechanics of every reproduction try.
 - **Simulation Tick:** A discrete unit of simulated time broadcast by the Simulation Clock Service to advance biological cycles, gestation, and aging deterministically.
 - **Sperm Cell (Spermatozoon):** A male gamete simulated inside a per-ejaculation SQLite database, carrying its own **haploid DNA** (22 autosomes + `X` or `Y`) calculated via meiosis from the father's diploid DNA, together with motility, morphology, viability, and **surface ligand profile** traits used by `sim-sperm-race` and `sim-gamete-surface`.
+- **World Chat Server:** A logical, player-selectable World of Warcraft-style public chat server managed by `chat-world-registry` and partitioned onto its own NATS JetStream subject (`chat.world.<world_server_id>`). Players choose or switch their World Chat Server by language, region, category, and population band without dropping their WebSocket session or interrupting Group Chat and Direct Messages (see [ADR-0002](architecture/ADR-0002-world-chat-microservices-and-server-selection.md)).
