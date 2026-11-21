@@ -77,6 +77,7 @@ erDiagram
         uuid id PK
         uuid mother_id FK
         blob haploid_dna "22 autosomes + X"
+        blob surface_profile "zona pellucida & oolemma receptors"
         timestamp ovulated_at_sim
         string status "MATURING | VIABLE | FERTILIZED | EXPIRED"
     }
@@ -93,6 +94,7 @@ erDiagram
         bigint cell_id PK
         string sex_chromosome "X | Y"
         blob haploid_dna "22 autosomes + X/Y"
+        blob surface_profile "acrosome & membrane ligands"
         float motility
         float viability
         float morphology
@@ -129,6 +131,19 @@ Every character carries both universal lifecycle attributes and biologically gro
   - `date_of_birth`: Simulated calendar date of birth (populated upon transition to `ALIVE`).
   - `date_of_death`: Simulated calendar date of natural death (nullable until transition to `DECEASED`).
   - `mother_uuid` / `father_uuid`: Immutable lineage references to both biological parents (null only for initial founder population).
+- **Visible Appearance Attributes (Shown on All Character Sheets):**
+  - `eye_color`: Current expressed iris pigmentation (e.g., blue, gray, hazel, green, amber, brown).
+  - `hair_color`: Current expressed hair pigmentation (e.g., blonde, red, light/dark brown, black, silver/gray, white).
+  - `skin_color`: Current expressed skin pigmentation tone.
+  - **Dynamic Changes After Birth & During Life:** While each character's pigmentation baseline is anchored in their immutable diploid DNA, `eye_color`, `hair_color`, and `skin_color` are **not static**—they may change after birth and throughout life based on developmental stage, aging, hormonal shifts, and environmental/biological factors (for example, newborn eye color darkening during infancy, childhood hair darkening or graying/whitening with age, and gradual age- or environment-driven skin tone shifts).
+- **Core Reproduction Attributes (AD&D-Style RPG Stats, Shown on All Character Sheets):**
+  Inspired by classic AD&D ability scores (e.g., Strength, Constitution), every character sheet displays **6 tabletop-style numeric attributes** (such as a `3–18` scale with derived positive/negative modifiers) specifically tailored to human reproduction. Derived from genotype, age, health, and lifecycle state, **these attributes directly modify the probability and mechanics of every reproduction try**:
+  1. **Fertility (`FER`):** Baseline gamete production capacity and reproductive reserve (follicular/ovarian quality in females; spermatogenesis output in males). Modifies gamete availability and base conception chance on each attempt.
+  2. **Constitution (`CON`):** Overall physiological resilience and bodily health. Modifies gamete viability, implantation stability, and gestation resilience during and after a reproduction try.
+  3. **Vitality (`VIT`):** Cellular energy and metabolic vigor. Modifies sperm motility/endurance during the race to the egg and oocyte vigor during the fertile window.
+  4. **Hormonal Balance (`HOR`):** Endocrine regularity and cycle synchronization. Modifies ovulation regularity, fertile-window clarity, cervical mucus permeability, and reproductive readiness on each try.
+  5. **Receptivity (`REC`):** Biological readiness and synchronization of the reproductive environment (e.g., optimal fertile-window alignment, capacitation support, and implantation receptivity). Applies timing and environment modifiers to each reproduction attempt.
+  6. **Compatibility (`COM`):** Molecular and surface-receptor affinity between gametes (zona pellucida / oolemma receptor and sperm ligand alignment). Modifies the gamete surface-fit check and fertilization fusion chance on each reproduction try.
 - **Female-Specific Attributes (`gender == FEMALE`):**
   - `date_of_first_menstruation`: Simulated calendar date of menarche (onset of the first menstrual cycle during puberty).
   - `menstruation_dates`: Historical and current record of menstruation dates (cycle start/end dates, cycle length, and ovulation dates).
@@ -139,11 +154,11 @@ Every character carries both universal lifecycle attributes and biologically gro
 
 ### 2.5 Genetics, Gamete DNA & Phenotype Model
 - **Diploid Character Genotype (Immutable):** Stored as a structured representation of 23 chromosome pairs (22 autosomal pairs + 1 sex chromosome pair, `XX` or `XY`), carrying allele definitions for modeled Mendelian and polygenic traits (e.g., facial geometry, eye/hair/skin pigmentation, blood type, baseline biological predispositions).
-- **Egg Cell (Oocyte) Haploid DNA Simulation:** Each ovulated egg cell produced by a female character is individually simulated with its own **haploid DNA** (22 single autosomes + 1 `X` chromosome), calculated via simulated meiosis (homologous crossover/recombination, independent assortment, and rare point mutations) from the mother's diploid DNA.
-- **Sperm Cell Haploid DNA Simulation & Ejaculation SQLite Database:** Each ejaculation event by a male character builds a **dedicated SQLite database** containing all simulated sperm cells included in that ejaculation. Every sperm cell record is individually calculated from the father's diploid DNA via simulated meiosis—yielding its own unique **haploid DNA** (22 single autosomes + either an `X` or `Y` sex chromosome) alongside cell-level physical traits (motility, morphology, viability).
-- **Offspring DNA Calculation from Mother and Father:** When a specific winning sperm cell fertilizes a specific egg cell, the new character's immutable diploid DNA (23 chromosome pairs) is calculated directly by pairing the **egg cell's haploid DNA** (from the mother) with the **winning sperm cell's haploid DNA** (from the father's ejaculation SQLite database). This guarantees true gamete-level Mendelian and polygenic inheritance and naturally determines the offspring's `gender` (`XX` or `XY`).
-- **Phenotype (Derived):** Computed dynamically by Character Sheet Attribute Microservices from the character's immutable genotype combined with current simulation state (age derived from `date_of_birth` / `date_of_death`, gender, hormonal phase, health state).
-- **Comic Face Portrait:** Derived deterministically from facial phenotype traits, gender, and current age stage, producing a stylized comic-art portrait (head/shoulders only) displayed on the character sheet.
+- **Egg Cell (Oocyte) Haploid DNA & Surface Profile Simulation:** Each ovulated egg cell produced by a female character is individually simulated with its own **haploid DNA** (22 single autosomes + 1 `X` chromosome), calculated via simulated meiosis (homologous crossover/recombination, independent assortment, and rare point mutations) from the mother's diploid DNA, together with an egg **surface profile** representing zona pellucida and oolemma binding receptors.
+- **Sperm Cell Haploid DNA, Surface Profile & Ejaculation SQLite Database:** Each ejaculation event by a male character builds a **dedicated SQLite database** containing all simulated sperm cells included in that ejaculation. Every sperm cell record is individually calculated from the father's diploid DNA via simulated meiosis—yielding its own unique **haploid DNA** (22 single autosomes + either an `X` or `Y` sex chromosome) alongside cell-level physical traits (motility, morphology, viability) and a **surface profile** (acrosome/membrane binding ligands).
+- **Offspring DNA Calculation from Mother and Father:** Fertilization requires not only that a sperm cell reaches the egg, but also that its surface profile **fits the egg cell's surface**—just as in biology, the fastest sperm cell does not always win. When a surface-compatible winning sperm cell fertilizes a specific egg cell, the new character's immutable diploid DNA (23 chromosome pairs) is calculated directly by pairing the **egg cell's haploid DNA** (from the mother) with the **winning sperm cell's haploid DNA** (from the father's ejaculation SQLite database). This guarantees true gamete-level Mendelian and polygenic inheritance and naturally determines the offspring's `gender` (`XX` or `XY`).
+- **Phenotype (Derived):** Computed dynamically by Character Sheet Attribute Microservices from the character's immutable genotype combined with current simulation state (age derived from `date_of_birth` / `date_of_death`, gender, hormonal phase, health state). This includes `eye_color`, `hair_color`, and `skin_color`, which can evolve after birth and across life stages, as well as the character's 6 AD&D-style reproduction attributes.
+- **Comic Face Portrait:** Derived deterministically from facial phenotype traits (including current `eye_color`, `hair_color`, and `skin_color`), gender, and current age stage, producing a stylized comic-art portrait (head/shoulders only) displayed on the character sheet.
 
 ---
 
@@ -190,6 +205,7 @@ flowchart TB
             Menstruation[Menstruation Cycle Service]
             Ejaculation[Ejaculation Service]
             SpermRace[Race-to-the-Egg Service]
+            GameteSurface[Gamete Surface Compatibility Service]
             Conception[Conception Service]
             DNACalc[DNA Calculation Service]
             Gestation[Gestation Service]
@@ -223,6 +239,7 @@ flowchart TB
     EventBus <--> Menstruation
     EventBus <--> Ejaculation
     EventBus <--> SpermRace
+    EventBus <--> GameteSurface
     EventBus <--> Conception
     EventBus <--> DNACalc
     EventBus <--> Gestation
@@ -252,6 +269,7 @@ princesspink/
 │   ├── sim-menstruation/
 │   ├── sim-ejaculation/
 │   ├── sim-sperm-race/
+│   ├── sim-gamete-surface/
 │   ├── sim-conception/
 │   ├── sim-dna/
 │   ├── sim-gestation/
@@ -270,6 +288,12 @@ princesspink/
 - **Internal Asynchronous Events:** An event broker (**NATS JetStream** inside AKS or **Azure Service Bus**) for decoupled, reliable propagation of simulation ticks and biological lifecycle events (e.g., `sim.tick.advanced`, `sim.ovulation.triggered`, `sim.conception.occurred`, `sim.dna.calculated`, `sim.character.born`, `sim.character.deceased`).
 - **Correlation & Idempotency:** Every request and event carries a `correlation_id`, `group_id`, and `character_uuid`. Event consumers must be idempotent to safely handle at-least-once delivery.
 
+### 3.5 Independent Microservice Versioning
+Every microservice in PrincessPink has **its own independent version number** (following **Semantic Versioning**, `MAJOR.MINOR.PATCH`, e.g., `1.3.0`) rather than sharing a single monolithic platform release version:
+- **Per-Service Ownership & Release Cadence:** Each service directory under `services/<service-name>/` maintains its own version metadata (e.g., a `VERSION` file and scoped Git release tags such as `sim-gamete-surface/v1.2.0` or `attr-eye-color/v0.4.1`). This lets scientific models, attribute calculators, and frontend services evolve, test, and deploy independently.
+- **Runtime Introspection & Contracts:** Each service embeds its version at build time (`-ldflags`) and exposes it via `/healthz` / `/version` endpoints, gRPC response payloads/metadata (e.g., `service_version`), OpenTelemetry `service.version` resource attributes, and structured log entries.
+- **Scientific Reproducibility & Deployment Traceability:** Container images pushed to Azure Container Registry (ACR) and deployed to AKS are tagged with each microservice's own version number. Simulation events and character sheet calculations record the producing microservice version so historical outcomes remain fully auditable even as individual biological models are refined.
+
 ---
 
 ## 4. Subsystem Specifications
@@ -285,7 +309,7 @@ The frontend is composed of multiple Go microservices built with the **Gin** HTT
 | `portrait-renderer` | Generates and serves comic-style face portraits (SVG or rasterized PNG/WebP) from a character's phenotypic facial traits and age stage. |
 
 **UI/UX Design Principles:**
-- **Pen-and-Paper Character Sheet Aesthetic:** Structured layout inspired by classic tabletop RPG sheets—Header (Player-assigned Name, Character UUID, Lifecycle Status, Comic Face Portrait), Core Biological Stats, Genetic & Hereditary Summary, Reproductive Cycle/Status Indicators, and Lineage/Event History.
+- **Pen-and-Paper Character Sheet Aesthetic:** Structured layout inspired by classic tabletop RPG sheets—Header (Player-assigned Name, Character UUID, Lifecycle Status, Comic Face Portrait), Visible Appearance (`eye_color`, `hair_color`, `skin_color` reflecting current life-stage pigmentation), Core AD&D-Style Reproduction Attributes (`FER`, `CON`, `VIT`, `HOR`, `REC`, `COM` with scores and modifiers), Core Biological Stats, Genetic & Hereditary Summary, Reproductive Cycle/Status Indicators, and Lineage/Event History.
 - **Rendering Strategy:** Server-rendered HTML templates (Go `html/template` or `templ`) enhanced with lightweight progressive interactivity (e.g., HTMX) or a clean JSON API served by Gin—keeping the entire frontend stack Go-native and fast.
 
 ---
@@ -331,9 +355,18 @@ To maximize modularity, independent scaling, and scientific maintainability, **e
    }
    ```
    - `CalculateRequest`: `character_uuid`, `sim_tick`, optional context snapshot (`gender`, `date_of_birth`, `date_of_death`, genome digest, lifecycle state).
-   - `CalculateResponse`: `attribute_key`, `display_name`, `value`, `unit`, `confidence_or_range`, `computed_at_tick`, `schema_version`.
+   - `CalculateResponse`: `attribute_key`, `display_name`, `value`, `unit`, `confidence_or_range`, `computed_at_tick`, `schema_version`, `service_version`.
    - Examples of Attribute Microservices:
      - `attr-biological-age` (chronological & developmental stage derived from `date_of_birth` and `date_of_death` / current `sim_tick`)
+     - `attr-eye-color` (current expressed eye color derived from genotype and age/developmental stage, accounting for post-birth and lifetime color changes)
+     - `attr-hair-color` (current expressed hair color derived from genotype, age, and lifecycle state, accounting for post-birth darkening and age-related graying/whitening)
+     - `attr-skin-color` (current expressed skin color derived from genotype, age, hormonal state, and environmental/seasonal modifiers)
+     - `attr-repro-fertility` (AD&D-style **Fertility (`FER`)** score & modifier applied to reproduction tries)
+     - `attr-repro-constitution` (AD&D-style **Constitution (`CON`)** score & modifier applied to reproduction tries and gestation stability)
+     - `attr-repro-vitality` (AD&D-style **Vitality (`VIT`)** score & modifier influencing gamete vigor and endurance)
+     - `attr-repro-hormonal-balance` (AD&D-style **Hormonal Balance (`HOR`)** score & modifier influencing cycle regularity and readiness)
+     - `attr-repro-receptivity` (AD&D-style **Receptivity (`REC`)** score & modifier influencing fertile-window and implantation mechanics)
+     - `attr-repro-compatibility` (AD&D-style **Compatibility (`COM`)** score & modifier influencing gamete surface-fit and fusion rolls)
      - `attr-menstruation-history` *(female-specific)* (`date_of_first_menstruation` / menarche, historical `menstruation_dates`, current cycle phase & next predicted cycle)
      - `attr-spermatogenesis-profile` *(male-specific)* (pubertal onset, baseline sperm count/motility/viability parameters)
      - `attr-fertility-index` (gender-, age-, and cycle-adjusted reproductive readiness)
@@ -341,7 +374,7 @@ To maximize modularity, independent scaling, and scientific maintainability, **e
      - `attr-genetic-traits` (expressed Mendelian/polygenic phenotypic traits)
      - `attr-health-vitality` (overall biological vitality score)
      - `attr-lineage-depth` (generation number, mother/father, ancestors, descendants)
-     - `attr-portrait-traits` (structured facial feature vector consumed by `portrait-renderer`)
+     - `attr-portrait-traits` (structured facial feature vector—including current eye, hair, and skin colors—consumed by `portrait-renderer`)
 
 ---
 
@@ -353,10 +386,11 @@ The simulation engine decomposes human reproduction and life cycles into indepen
 | Microservice | Biological Scope & Responsibilities | Storage |
 | :--- | :--- | :--- |
 | `sim-clock` | Manages per-group simulation time (discrete ticks / calendar dates), publishes `sim.tick.advanced` events, and allows GMs to pause/step/adjust speed. | PostgreSQL / State store |
-| `sim-menstruation` | Tracks female-specific reproductive milestones (`date_of_first_menstruation` / menarche, `menstruation_dates`), simulates ovarian/menstrual cycles (menstrual, follicular, ovulation, luteal phases), and simulates each ovulated **egg cell (oocyte)** with its **haploid DNA** calculated via meiosis from the mother's diploid DNA. | Local SQLite (cycle state, egg-cell haploid DNA & hormone lookup tables) |
-| `sim-ejaculation` | Models male spermatogenesis and ejaculation events. For each ejaculation, reads the male character's diploid DNA, performs meiosis for the simulated sperm cohort, and **builds a dedicated per-ejaculation SQLite database** containing all simulated **sperm cells** (each with its unique haploid DNA, sex chromosome `X`/`Y`, motility, morphology, and viability). | Local SQLite (reference distributions) + **Per-Ejaculation SQLite DB artifact** |
-| `sim-sperm-race` | Opens/reads the per-ejaculation SQLite database of sperm cells, simulates sperm transport ("race to the egg"): cervical mucus permeability (coupled to cycle phase), capacitation, attrition curves, and chemotaxis, and selects the specific **winning sperm cell** (including its `cell_id` and haploid DNA) or determines a non-fertilization outcome. | Local SQLite (reference physics/biology curves) + reads Ejaculation SQLite DB |
-| `sim-conception` | Pairs the winning sperm cell (from `sim-sperm-race`) with the viable egg cell (from `sim-menstruation`), evaluates oocyte availability window, zona pellucida fusion, and polyspermy block. Allocates a new **Character UUID** upon successful fertilization and emits `sim.conception.occurred` with mother UUID, father UUID, egg-cell DNA, and winning sperm-cell DNA. | Local SQLite / Event-driven |
+| `sim-menstruation` | Tracks female-specific reproductive milestones (`date_of_first_menstruation` / menarche, `menstruation_dates`), simulates ovarian/menstrual cycles (menstrual, follicular, ovulation, luteal phases) modulated by the mother's reproduction attributes (`FER`, `HOR`, `REC`), and simulates each ovulated **egg cell (oocyte)** with its **haploid DNA** and **surface receptor profile**. | Local SQLite (cycle state, egg-cell haploid DNA, surface profiles & hormone lookup tables) |
+| `sim-ejaculation` | Models male spermatogenesis and ejaculation events modulated by the father's reproduction attributes (`FER`, `CON`, `VIT`, `HOR`). For each ejaculation, reads the male character's diploid DNA, performs meiosis for the simulated sperm cohort, and **builds a dedicated per-ejaculation SQLite database** containing all simulated **sperm cells** (each with its unique haploid DNA, sex chromosome `X`/`Y`, **surface ligand profile**, motility, morphology, and viability). | Local SQLite (reference distributions) + **Per-Ejaculation SQLite DB artifact** |
+| `sim-sperm-race` | Opens/reads the per-ejaculation SQLite database of sperm cells, simulates sperm transport ("race to the egg"): cervical mucus permeability (coupled to cycle phase and parental `HOR`/`REC`/`VIT` modifiers), capacitation, attrition curves, and chemotaxis, and produces an **arrival-ordered shortlist of viable candidate sperm cells** reaching the egg (since the fastest cell does not automatically win if its surface does not fit). | Local SQLite (reference physics/biology curves) + reads Ejaculation SQLite DB |
+| `sim-gamete-surface` | Evaluates molecular **surface compatibility between each arriving sperm cell and the viable egg cell** (modeling zona pellucida glycoprotein and oolemma receptor–ligand binding, modulated by parental `COM` and `REC` attributes). Iterates through arriving candidates from `sim-sperm-race`: if the fastest sperm cell's surface does not fit the egg cell, it is rejected and subsequent arriving candidates are tested until a surface-compatible sperm cell binds—or no candidate fits, resulting in non-fertilization. | Local SQLite (receptor–ligand compatibility matrices) + reads Ejaculation SQLite DB & Egg surface profile |
+| `sim-conception` | Pairs the surface-compatible winning sperm cell (confirmed by `sim-gamete-surface`) with the viable egg cell (from `sim-menstruation`), evaluates oocyte availability window, membrane fusion, polyspermy block, and parental `CON`/`REC` implantation modifiers. Allocates a new **Character UUID** upon successful fertilization and emits `sim.conception.occurred` with mother UUID, father UUID, egg-cell DNA, and winning sperm-cell DNA. | Local SQLite / Event-driven |
 | `sim-dna` | Provides meiosis/gamete-DNA synthesis utilities (for egg cells and sperm cells) and performs fertilization DNA combination: merges the **egg cell's haploid DNA** (mother) and the **winning sperm cell's haploid DNA** (father) into the new character's immutable 23-pair diploid **DNA** and determines biological `gender` (`XX` → `FEMALE`, `XY` → `MALE`). | Local SQLite (gene loci & allele reference DB) + immutable genome store |
 | `sim-gestation` | Tracks prenatal milestones from implantation through trimesters to birth, updating prenatal attributes, setting `date_of_birth`, and emitting `sim.character.born`. | Local SQLite / Event-driven |
 | `sim-lifecycle` | Advances character age (from `date_of_birth`), developmental milestones (including triggering menarche / pubertal onset), health trajectories, and natural mortality curves, setting `date_of_death` and emitting `sim.character.deceased` at end of life. | Local SQLite (actuarial & biological life tables) |
@@ -370,6 +404,7 @@ sequenceDiagram
     participant Ejac as sim-ejaculation
     participant EjacDB as Ejaculation SQLite DB
     participant Race as sim-sperm-race
+    participant Surf as sim-gamete-surface
     participant Conc as sim-conception
     participant DNA as sim-dna
     participant Reg as character-registry
@@ -377,14 +412,18 @@ sequenceDiagram
 
     Clock->>Mens: sim.tick.advanced (calendar date)
     Mens->>DNA: Generate egg cell haploid DNA (mother_uuid)
-    Mens-->>Mens: Record menstruation_dates & viable egg cell (haploid DNA)
-    Mens-->>Race: Fertile window & mucus state
-    Note over Ejac,Race: Reproductive event initiated within simulation
-    Ejac->>Reg: Fetch father diploid DNA (father_uuid)
-    Ejac->>EjacDB: Build per-ejaculation SQLite DB of sperm cells (each with haploid DNA + motility/viability)
+    Mens-->>Mens: Record menstruation_dates, egg haploid DNA & egg surface profile
+    Mens-->>Race: Fertile window, mucus state & maternal repro attribute modifiers
+    Note over Ejac,Surf: Reproductive try initiated (modulated by 6 AD&D-style reproduction attributes)
+    Ejac->>Reg: Fetch father diploid DNA & repro attributes (father_uuid)
+    Ejac->>EjacDB: Build per-ejaculation SQLite DB of sperm cells (haploid DNA + surface profile + motility/viability)
     Ejac->>Race: Ejaculation event + SQLite DB reference
     Race->>EjacDB: Query & simulate sperm cell cohort race
-    Race->>Conc: Winning sperm cell (cell_id + haploid DNA) or failed attempt
+    Race->>Surf: Arrival-ordered candidate sperm cells (fastest first)
+    Surf->>Mens: Fetch viable egg cell surface profile
+    Surf->>EjacDB: Read candidate sperm surface profiles
+    Surf-->>Surf: Check surface fit in arrival order (fastest may fail fit then next fitting candidate wins)
+    Surf->>Conc: Surface-compatible winning sperm cell (cell_id + haploid DNA) or no-fit outcome
     Conc->>Mens: Verify viable egg cell & retrieve egg haploid DNA
     alt Fertilization Succeeds
         Conc->>DNA: Combine egg haploid DNA (mother) + sperm haploid DNA (father)
@@ -400,7 +439,7 @@ sequenceDiagram
 
 #### Scientific Modeling Standards
 - **Reproducible Stochasticity:** All probabilistic biological processes use seeded pseudorandom number generators (`math/rand/v2` with explicit seeds derived from `group_id + sim_tick + event_id`) so simulation runs are auditable and reproducible in tests.
-- **Versioned Scientific Parameters:** Biological constants (e.g., mean luteal phase length, mutation rates, crossover probabilities) are versioned configuration data rather than hardcoded magic numbers.
+- **Versioned Scientific Parameters & Service Versions:** Biological constants (e.g., mean luteal phase length, mutation rates, crossover probabilities, receptor-binding thresholds) are versioned configuration data rather than hardcoded magic numbers, and every simulation event records the emitting microservice's own version number.
 
 ---
 
@@ -432,8 +471,8 @@ Selected simulation microservices use embedded **SQLite** databases for low-late
    - Each ejaculation event triggers `sim-ejaculation` to construct a self-contained SQLite database file (e.g., `ejaculation_<event_uuid>.sqlite`) populated with the individual simulated **sperm cells** calculated via meiosis from the male character's diploid DNA.
    - **Logical Schema:**
      - `ejaculation_meta` (`ejaculation_id`, `father_uuid`, `group_id`, `sim_tick`, `prng_seed`, `cell_count`, `created_at`)
-     - `sperm_cells` (`cell_id`, `sex_chromosome` [`X` | `Y`], `haploid_dna` [compact binary chromosome encoding], `motility_score`, `morphology_score`, `viability_score`, `status`)
-   - **Build & Lifecycle in Kubernetes:** Written in a single batched transaction on local ephemeral NVMe/tmpfs storage (with `PRAGMA journal_mode=OFF; PRAGMA synchronous=OFF;` during creation), then sealed read-only and published to shared artifact storage (e.g., **Azure Blob Storage** or a shared ReadWriteMany volume) for consumption by `sim-sperm-race` and `sim-conception`. Once the race and conception evaluation complete, the winning sperm cell's DNA is preserved in the child's conception record and the temporary SQLite artifact is garbage-collected or archived according to the group's retention policy.
+     - `sperm_cells` (`cell_id`, `sex_chromosome` [`X` | `Y`], `haploid_dna` [compact binary chromosome encoding], `surface_profile` [compact binary receptor/ligand signature], `motility_score`, `morphology_score`, `viability_score`, `status`)
+   - **Build & Lifecycle in Kubernetes:** Written in a single batched transaction on local ephemeral NVMe/tmpfs storage (with `PRAGMA journal_mode=OFF; PRAGMA synchronous=OFF;` during creation), then sealed read-only and published to shared artifact storage (e.g., **Azure Blob Storage** or a shared ReadWriteMany volume) for consumption by `sim-sperm-race`, `sim-gamete-surface`, and `sim-conception`. Once the race, surface-compatibility check, and conception evaluation complete, the winning sperm cell's DNA is preserved in the child's conception record and the temporary SQLite artifact is garbage-collected or archived according to the group's retention policy.
 
 ### 5.3 Data Consistency
 - **Transactional Outbox Pattern:** Services writing to PostgreSQL and publishing domain events use an outbox table to guarantee atomicity between database commits and event publication.
@@ -473,7 +512,7 @@ PrincessPink runs on **Azure Kubernetes Service (AKS)** with workload isolation 
 
 ### 7.1 Observability (OpenTelemetry)
 - **Distributed Tracing:** End-to-end OpenTelemetry traces across Gin HTTP handlers, gRPC fan-out (`sheet-aggregator` → `attr-*`), and async simulation event chains.
-- **Structured Logging:** Go standard `log/slog` outputting JSON logs enriched with `trace_id`, `user_uuid` (non-PII), `group_id`, and `character_uuid`.
+- **Structured Logging:** Go standard `log/slog` outputting JSON logs enriched with `service_version`, `trace_id`, `user_uuid` (non-PII), `group_id`, and `character_uuid`.
 - **Metrics:** Prometheus-compatible metrics tracking request latency (p50/p95/p99), attribute fan-out error rates, simulation tick duration, active characters, and conception/birth rates.
 
 ### 7.2 Testing Strategy
@@ -485,7 +524,7 @@ PrincessPink runs on **Azure Kubernetes Service (AKS)** with workload isolation 
 
 ### 7.3 CI/CD & Developer Experience
 - **Local Development:** `Makefile` targets and local Kubernetes (`kind` / `k3d`) or Docker Compose stack for running core services locally without Azure dependencies.
-- **CI/CD (`.github/workflows/`):** Automated `golangci-lint`, unit/integration tests, vulnerability scanning (`govulncheck`, Trivy), multi-arch container builds to ACR, and GitOps/Helm deployments to AKS (dev → staging → prod).
+- **CI/CD (`.github/workflows/`):** Automated `golangci-lint`, unit/integration tests, vulnerability scanning (`govulncheck`, Trivy), independent per-service versioned multi-arch container builds to ACR (tagged with each microservice's own semantic version), and GitOps/Helm deployments to AKS (dev → staging → prod).
 - **Operational Documentation:** API contracts in `docs/api/`, Architecture Decision Records (ADRs) in `docs/architecture/`, and incident/backup runbooks in `docs/runbooks/`.
 
 ---
@@ -512,8 +551,8 @@ PrincessPink runs on **Azure Kubernetes Service (AKS)** with workload isolation 
    - Implement `frontend-gateway`, `frontend-sheets`, `frontend-gm` (Go + Gin).
    - Implement `character-registry`, `sheet-aggregator`, initial set of `attr-*` microservices, and the deterministic `portrait-renderer`.
 3. **Phase 3 — Core Reproduction Simulation Pipeline**
-   - Implement `sim-clock`, `sim-menstruation`, `sim-ejaculation`, `sim-sperm-race`, `sim-conception`, and `sim-dna` with local SQLite reference databases and event bus integration.
-   - Validate biological and genetic invariants with seeded cohort tests.
+   - Implement `sim-clock`, `sim-menstruation`, `sim-ejaculation`, `sim-sperm-race`, `sim-gamete-surface`, `sim-conception`, and `sim-dna` with local SQLite reference databases and event bus integration.
+   - Validate biological and genetic invariants with seeded cohort tests (including reproduction attribute modifiers and surface-compatibility selection).
 4. **Phase 4 — Full Lifecycle & Population Features**
    - Implement `sim-gestation`, `sim-lifecycle` (aging and natural death), multi-generational family trees, and Game Master population analytics.
 5. **Phase 5 — Production Hardening on Azure AKS**
@@ -524,15 +563,16 @@ PrincessPink runs on **Azure Kubernetes Service (AKS)** with workload isolation 
 ## 10. Glossary
 
 - **Agent / Character:** An individual simulated human within PrincessPink. Every agent in the simulation is a character, similar to a character in a pen-and-paper RPG. Each character has a globally unique, permanent **UUID** that identifies it before birth (from conception), during life, and after death, along with core attributes (`gender`, `date_of_birth`, `date_of_death`) and gender-specific biological attributes. Characters are linked to a Player who owns and plays them.
-- **Character Sheet:** The gamified, tabletop-RPG-inspired view of a character's identity (name, UUID, gender, date of birth, date of death), comic face portrait, and universal plus gender-specific biological/genetic attributes. Each displayed attribute is calculated by a dedicated microservice.
-- **Conception:** The biological fertilization event in which a winning sperm cell (with its haploid DNA) fuses with a viable egg cell (with its haploid DNA), triggering allocation of a new Character UUID and diploid DNA calculation.
+- **Character Sheet:** The gamified, tabletop-RPG-inspired view of a character's identity (name, UUID, gender, date of birth, date of death), comic face portrait, dynamic appearance traits (`eye_color`, `hair_color`, `skin_color`), 6 AD&D-style reproduction attributes, and universal plus gender-specific biological/genetic attributes. Each displayed attribute is calculated by a dedicated microservice.
+- **Conception:** The biological fertilization event in which a surface-compatible winning sperm cell (confirmed by `sim-gamete-surface`, with its haploid DNA) fuses with a viable egg cell (with its haploid DNA), triggering allocation of a new Character UUID and diploid DNA calculation.
 - **DNA (Genome):** The immutable diploid genetic blueprint (23 chromosome pairs) calculated for each newly conceived character by combining the haploid DNA of the mother's egg cell and the haploid DNA of the father's winning sperm cell.
-- **Egg Cell (Oocyte):** A female gamete simulated by `sim-menstruation` during ovulation, carrying its own **haploid DNA** (22 autosomes + `X`) calculated via meiosis from the mother's diploid DNA.
-- **Ejaculation Database:** A dedicated, event-scoped **SQLite database** built by `sim-ejaculation` for a male character's ejaculation event, storing all simulated sperm cells in that ejaculation along with their individual haploid DNA (derived from the father's DNA) and motility/viability attributes.
+- **Egg Cell (Oocyte):** A female gamete simulated by `sim-menstruation` during ovulation, carrying its own **haploid DNA** (22 autosomes + `X`) calculated via meiosis from the mother's diploid DNA, along with a **surface receptor profile** checked during fertilization.
+- **Ejaculation Database:** A dedicated, event-scoped **SQLite database** built by `sim-ejaculation` for a male character's ejaculation event, storing all simulated sperm cells in that ejaculation along with their individual haploid DNA (derived from the father's DNA), surface ligand profile, and motility/viability attributes.
 - **Game Master (GM):** A user role responsible for managing a simulation Group (campaign). Game Masters can view all character sheets of players within their group(s) and control group-level simulation settings.
 - **Group:** A logical simulation world or campaign managed by a Game Master, grouping Players and their Characters together under a shared simulation clock.
 - **Menarche (Date of First Menstruation):** A female-specific biological milestone recording the simulated calendar date of a female character's first menstruation, followed by ongoing recorded `menstruation_dates`.
-- **Phenotype:** The observable biological and visual traits of a character (such as facial features for the comic portrait or vitality scores), derived from the character's DNA combined with gender, age, and lifecycle state.
+- **Phenotype:** The observable biological and visual traits of a character (such as facial features, `eye_color`, `hair_color`, `skin_color`, and vitality scores), derived from the character's DNA combined with gender, age, and lifecycle state—including traits that naturally shift after birth and during life.
 - **Player / User:** An authenticated user in PrincessPink identified by a unique **UUID**. Players own and play characters and have access to the character sheets of their owned characters.
+- **Reproduction Attributes:** Six AD&D-style numeric tabletop stats displayed on every character sheet—**Fertility (`FER`)**, **Constitution (`CON`)**, **Vitality (`VIT`)**, **Hormonal Balance (`HOR`)**, **Receptivity (`REC`)**, and **Compatibility (`COM`)**—whose derived modifiers affect the probability and mechanics of every reproduction try.
 - **Simulation Tick:** A discrete unit of simulated time broadcast by the Simulation Clock Service to advance biological cycles, gestation, and aging deterministically.
-- **Sperm Cell (Spermatozoon):** A male gamete simulated inside a per-ejaculation SQLite database, carrying its own **haploid DNA** (22 autosomes + `X` or `Y`) calculated via meiosis from the father's diploid DNA, together with motility, morphology, and viability traits used in `sim-sperm-race`.
+- **Sperm Cell (Spermatozoon):** A male gamete simulated inside a per-ejaculation SQLite database, carrying its own **haploid DNA** (22 autosomes + `X` or `Y`) calculated via meiosis from the father's diploid DNA, together with motility, morphology, viability, and **surface ligand profile** traits used by `sim-sperm-race` and `sim-gamete-surface`.
