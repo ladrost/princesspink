@@ -387,9 +387,9 @@ princesspink/
 
 ### 3.4 Inter-Service Communication Patterns
 - **External / Frontend HTTP & WebSockets:** REST/HTML over HTTPS using the **Gin** framework, plus authenticated **WebSockets** over TLS (`wss://`) in `frontend-chat` for real-time bi-directional Global, Group, and 1-to-1 Direct Message chat delivery.
-- **Internal Synchronous RPC:** **gRPC with Protocol Buffers** (`pkg/proto`) for low-latency, strongly typed internal calls (especially the high fan-out from `sheet-aggregator` to individual `attr-*` services, authorization/group-membership checks against `user-admin`, and direct calculation queries to `sim-birth-date`, `sim-egg-selection`, `sim-menarche`, and `sim-mortality`).
+- **Internal Synchronous RPC:** **gRPC with Protocol Buffers** (`pkg/proto`, see [ADR-0005](architecture/ADR-0005-shared-grpc-protobuf-contracts.md)) for low-latency, strongly typed internal calls (especially the high fan-out from `sheet-aggregator` to individual `attr-*` services, authorization/group-membership checks against `user-admin`, and direct calculation queries to `sim-birth-date`, `sim-egg-selection`, `sim-menarche`, and `sim-mortality`).
 - **Internal Asynchronous Events:** An event broker (**NATS JetStream** inside AKS or **Azure Service Bus**) for decoupled, reliable propagation of simulation ticks, chat pub/sub fan-out across pods, and biological lifecycle events (e.g., `sim.tick.advanced`, `sim.egg_reserve.created`, `sim.menarche.calculated`, `sim.egg.selected`, `sim.ovulation.triggered`, `sim.conception.occurred`, `sim.dna.calculated`, `sim.birthdate.calculated`, `sim.character.born`, `sim.deathdate.calculated`, `sim.character.deceased`).
-- **Correlation & Idempotency:** Every request and event carries a `correlation_id`, `group_id`, and `character_uuid`. Event consumers must be idempotent to safely handle at-least-once delivery.
+- **Correlation & Idempotency:** Every request and event carries a `correlation_id`, `group_id`, and `character_uuid` (standardized on RFC 9562 UUIDv7 via `pkg/uuid`, see [ADR-0007](architecture/ADR-0007-shared-uuid-utilities.md)). Event consumers must be idempotent to safely handle at-least-once delivery.
 
 ### 3.5 Independent Microservice Versioning
 Every microservice in PrincessPink has **its own independent version number** (following **Semantic Versioning**, `MAJOR.MINOR.PATCH`, e.g., `1.3.0`) rather than sharing a single monolithic platform release version:
@@ -670,9 +670,9 @@ PrincessPink runs on **Azure Kubernetes Service (AKS)** with workload isolation 
 ## 7. Observability, Testing & Operations
 
 ### 7.1 Observability (OpenTelemetry)
-- **Distributed Tracing:** End-to-end OpenTelemetry traces across Gin HTTP handlers, gRPC fan-out (`sheet-aggregator` → `attr-*`), and async simulation event chains.
-- **Structured Logging:** Go standard `log/slog` outputting JSON logs enriched with `service_version`, `trace_id`, `user_uuid` (non-PII), `group_id`, and `character_uuid`.
-- **Metrics:** Prometheus-compatible metrics tracking request latency (p50/p95/p99), attribute fan-out error rates, simulation tick duration, active characters, and conception/birth rates.
+- **Distributed Tracing:** End-to-end OpenTelemetry traces (`pkg/telemetry`, see [ADR-0004](architecture/ADR-0004-shared-opentelemetry-observability.md)) across Gin HTTP handlers, gRPC fan-out (`sheet-aggregator` → `attr-*`), and async simulation event chains.
+- **Structured Logging:** Go standard `log/slog` (`pkg/logging`, see [ADR-0003](architecture/ADR-0003-shared-logging-library.md)) outputting JSON logs enriched with `service_version`, `trace_id`, `user_uuid` (non-PII), `group_id`, and `character_uuid`.
+- **Metrics:** Prometheus-compatible metrics ([ADR-0004](architecture/ADR-0004-shared-opentelemetry-observability.md)) tracking request latency (p50/p95/p99), attribute fan-out error rates, simulation tick duration, active characters, and conception/birth rates.
 
 ### 7.2 Testing Strategy
 - **Unit Tests:** Pure Go tests for biological formulas, genetic crossover/recombination math, hormonal curves, and RBAC rules.
@@ -682,9 +682,9 @@ PrincessPink runs on **Azure Kubernetes Service (AKS)** with workload isolation 
 - **Load & Resilience Tests:** Verifying `sheet-aggregator` fan-out latency and graceful degradation when individual `attr-*` services experience latency or failure.
 
 ### 7.3 CI/CD & Developer Experience
-- **Local Development:** `Makefile` targets and local Kubernetes (`kind` / `k3d`) or Docker Compose stack for running core services locally without Azure dependencies.
-- **CI/CD (`.github/workflows/`):** Automated `golangci-lint`, unit/integration tests, vulnerability scanning (`govulncheck`, Trivy), independent per-service versioned multi-arch container builds to ACR (tagged with each microservice's own semantic version), and GitOps/Helm deployments to AKS (dev → staging → prod).
-- **Operational Documentation:** API contracts in `docs/api/`, Architecture Decision Records (ADRs) in `docs/architecture/`, and incident/backup runbooks in `docs/runbooks/`.
+- **Local Development:** `Makefile` targets (see [ADR-0008](architecture/ADR-0008-multi-module-makefile-build-automation.md)), typed 12-Factor environment/file-secret configuration (`pkg/config`, see [ADR-0006](architecture/ADR-0006-shared-configuration-library.md)), and local Kubernetes (`kind` / `k3d`) or Docker Compose stack for running core services locally without Azure dependencies.
+- **CI/CD (`.github/workflows/`):** Automated `golangci-lint`, unit/integration tests, vulnerability scanning (`govulncheck`, Trivy), independent per-service versioned multi-arch container builds to ACR (tagged with each microservice's own semantic version), and GitOps/Helm deployments to AKS (dev → staging → prod) (see [ADR-0009](architecture/ADR-0009-github-actions-ci-cd.md)).
+- **Operational Documentation:** API contracts in `docs/api/`, Architecture Decision Records (ADRs) in `docs/architecture/` ([ADR-0001](architecture/ADR-0001-minimum-postgresql-version.md)–[ADR-0009](architecture/ADR-0009-github-actions-ci-cd.md)), and incident/backup runbooks in `docs/runbooks/`.
 
 ---
 
@@ -706,7 +706,7 @@ PrincessPink runs on **Azure Kubernetes Service (AKS)** with workload isolation 
 ## 9. Phased Implementation Roadmap
 
 1. **Phase 1 — Platform Foundation**
-   - Establish shared `pkg/` libraries (logging, OpenTelemetry, gRPC contracts, config, UUID utilities), `Makefile`, and GitHub Actions CI.
+   - Establish shared `pkg/` libraries (logging per [ADR-0003](architecture/ADR-0003-shared-logging-library.md), OpenTelemetry per [ADR-0004](architecture/ADR-0004-shared-opentelemetry-observability.md), gRPC contracts per [ADR-0005](architecture/ADR-0005-shared-grpc-protobuf-contracts.md), config per [ADR-0006](architecture/ADR-0006-shared-configuration-library.md), UUID utilities per [ADR-0007](architecture/ADR-0007-shared-uuid-utilities.md)), `Makefile` ([ADR-0008](architecture/ADR-0008-multi-module-makefile-build-automation.md)), and GitHub Actions CI ([ADR-0009](architecture/ADR-0009-github-actions-ci-cd.md)).
    - Implement `user-admin` with PostgreSQL, Argon2id auth, Player/GM roles, and Group management.
 2. **Phase 2 — Character Sheet, Chat & Frontend MVP**
    - Implement `frontend-gateway`, `frontend-sheets`, `frontend-gm`, `frontend-chat` (Go + Gin), `chat-service`, and `chat-world-registry` (World of Warcraft-style player-selectable World Chat Servers, GM/Group Chat, and 1-to-1 Player Direct Messages per [ADR-0002](architecture/ADR-0002-world-chat-microservices-and-server-selection.md)).
