@@ -597,8 +597,8 @@ sequenceDiagram
     participant Menar as sim-menarche
     participant Mort as sim-mortality
 
-    Clock->>Mens: sim.tick.advanced (calendar date; applies active Contraception Pill cycle modulation)
-    Mens->>EggSel: Select egg cell for mother's next cycle (mother_uuid; suppressed if Contraception Pill blocks ovulation)
+    Clock->>Mens: sim.tick.advanced (calendar date - applies active Contraception Pill cycle modulation)
+    Mens->>EggSel: Select egg cell for mother's next cycle (mother_uuid - suppressed if Contraception Pill blocks ovulation)
     EggSel->>EggDB: Query UUID-linked Egg-Reserve SQLite DB & mark selected egg cell
     EggSel-->>Mens: Selected egg cell (cell_id, haploid DNA, surface profile) or suppressed ovulation
     Mens-->>Race: Fertile window, mucus state & maternal repro attribute / medication modifiers
