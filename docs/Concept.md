@@ -44,6 +44,7 @@ erDiagram
     EJACULATION_DB ||--|{ SPERM_CELL : "contains haploid"
     CHARACTER ||--o{ LIFECYCLE_EVENT : "records"
     CHARACTER ||--o{ WEIGHT_ADJUSTMENT : "records GM role-play changes"
+    CHARACTER ||--o{ CHARACTER_MEDICAL_DRUG : "takes (gender-eligible RP drugs)"
 
     USER {
         uuid id PK
@@ -135,6 +136,18 @@ erDiagram
         timestamp adjusted_at_sim
     }
 
+    CHARACTER_MEDICAL_DRUG {
+        uuid id PK
+        uuid character_id FK
+        string drug_code "VIAGRA | CONTRACEPTION_PILL | ..."
+        string eligible_gender "MALE | FEMALE | ALL"
+        bool is_active "toggled via character sheet checkbox"
+        timestamp started_at_sim
+        timestamp stopped_at_sim "nullable while active"
+        uuid updated_by_user_id FK
+        timestamp updated_at_sim
+    }
+
     MENSTRUATION_CYCLE {
         uuid id PK
         uuid character_id FK
@@ -166,6 +179,8 @@ erDiagram
         uuid father_id FK
         timestamp occurred_at_sim
         int sperm_count
+        float erection_quality
+        float quality_factor "decays with repeated short-interval ejaculations"
         string sqlite_artifact_uri
     }
 
@@ -181,7 +196,7 @@ erDiagram
 ```
 
 ### 2.2 Roles, Character Ownership & Group Participation Rules
-- **Player (User):** Authenticated user identified by a unique `UUID`. A Player may own **multiple Characters** in their personal roster, has read/interaction access to the character sheets of their owned characters, and can communicate via **Global / World Chat**, their assigned **Group Chat(s)**, and private **1-to-1 Direct Messages** with other Players.
+- **Player (User):** Authenticated user identified by a unique `UUID`. A Player may own **multiple Characters** in their personal roster, has read/interaction access to the character sheets of their owned characters (including toggling gender-eligible **Medical Drugs** via checkboxes for role-play), and can communicate via **Global / World Chat**, their assigned **Group Chat(s)**, and private **1-to-1 Direct Messages** with other Players.
 - **Game Master (GM):** Authenticated user who manages one or more **Groups** (simulation worlds/campaigns). A Game Master has visibility into all active player characters and NPC children living within their group(s), controls group-level simulation settings (e.g., simulation clock speed, starting population parameters, and role-play weight adjustment bounds), may adjust a character's `weight_kg` within configured biological/role-play parameters for storytelling (with full audit logging), and participates in and moderates the **Group Chat** for his/her Group(s) alongside Global / World Chat and Direct Messages.
 - **One Character per Player per Group:** Although a Player may own multiple Characters across their account, **within any single Group a Player plays only one Character**. At the **start of the Group**, each Player selects that single active Character from the Characters they already own (`GROUP_MEMBERSHIP.selected_character_id`).
 - **Children as NPCs & Parental Ownership Agreement:** Every child **conceived or born during a simulation** enters the simulation as an **NPC (Non-Player Character)** with no Player owner (`owner_user_id = null`). The child remains an unowned NPC until the **Players of the mother and the father reach a mutual agreement** (`OWNERSHIP_AGREEMENT`) deciding which of them takes ownership of the child. Once both parents' Players agree, `owner_user_id` is assigned and the child is added to that Player's personal character roster.
@@ -249,11 +264,21 @@ Every character carries both universal lifecycle attributes and biologically gro
 - **Female-Specific Attributes (`gender == FEMALE`):**
   - `date_of_first_menstruation`: Simulated calendar date of menarche (onset of the first menstrual cycle during puberty), calculated for a young female character by `sim-menarche`.
   - `egg_reserve_db`: Reference to the dedicated ovarian **Egg-Cell SQLite database** linked to the female character's `UUID`, generated at birth by `sim-egg-reserve` and queried each cycle by `sim-egg-selection` to choose the next ovulated egg cell.
-  - `menstruation_dates`: Historical and current record of menstruation dates (cycle start/end dates, cycle length, and ovulation dates).
-  - `ovarian_cycle_state`: Current phase (pre-menarche, menstrual, follicular, ovulation, luteal, pregnant, post-menopausal) and reference to any currently viable **egg cell (oocyte)** selected from her Egg-Cell SQLite database and its haploid DNA.
+  - `menstruation_dates`: Historical and current record of menstruation dates (cycle start/end dates, cycle length, and ovulation dates), influenced by active hormonal medication such as the **Contraception Pill**.
+  - `ovarian_cycle_state`: Current phase (pre-menarche, menstrual, follicular, ovulation, luteal, pregnant, post-menopausal) and reference to any currently viable **egg cell (oocyte)** selected from her Egg-Cell SQLite database and its haploid DNA (or suppressed ovulation state when on hormonal contraception).
 - **Male-Specific Attributes (`gender == MALE`):**
-  - `spermatogenesis_state`: Pubertal onset, sperm production baseline, motility/morphology distributions, and reproductive readiness.
-  - `ejaculation_history`: References to recent ejaculation events and their generated sperm-cell SQLite databases.
+  - `spermatogenesis_state`: Pubertal onset, sperm production baseline, motility/morphology distributions, `erection_quality` baseline, and reproductive readiness.
+  - `ejaculation_history`: References to recent ejaculation events, their timestamps (used to calculate short-interval ejaculation quality decay), and their generated sperm-cell SQLite databases.
+- **Medical Drugs (Role-Play Modifiers, Gender-Filtered Checkboxes on Character Sheet):**
+  To support realistic medical and lifestyle role-play while strictly upholding the zero-violence, zero-nudity policy, characters can take **medical drugs** that directly influence biological simulation processes. On the character sheet (`frontend-sheets`), the **Player** controls whether and which medical drugs their character is currently taking by **clicking the checkbox in front of each medical drug available for the character's biological `gender`** (`CHARACTER_MEDICAL_DRUG`):
+  - **Gender-Filtered Availability & Extensibility:** Only drugs eligible for the character's `gender` (`MALE`, `FEMALE`, or `ALL` for future universal drugs) are presented as selectable checkboxes on the sheet and accepted by `character-registry`. Toggling a checkbox immediately persists the change and emits `character.medication.updated` so simulation services and character sheet attributes recalculate.
+  - **Viagra (`VIAGRA`, `gender == MALE`):**
+    - Increases the male character's **`erection_quality`** score/modifier.
+    - Increases the probability of **one or more ejaculations occurring within a single simulated day**.
+    - Interacts with physiological **short-interval ejaculation quality decay**: with each consecutive ejaculation occurring within a short period of time, the **quality of the ejaculation decreases** (progressive reduction in sperm count/concentration, motility, morphology, and viability recorded in `EJACULATION_DB.quality_factor` and the generated sperm-cell SQLite cohort).
+  - **Contraception Pill (`CONTRACEPTION_PILL`, `gender == FEMALE`):**
+    - Influences the female character's **menstruation period** (modulating cycle cadence, regularity, duration, and withdrawal-bleed timing in `sim-menstruation`, including physiological transition behavior when starting or stopping the pill).
+    - Strongly influences (reduces) the **chance of conceiving a baby** by suppressing or inhibiting ovulation (`sim-egg-selection`), lowering cervical mucus permeability (`sim-sperm-race`), and reducing implantation receptivity (`sim-conception`) according to versioned scientific efficacy parameters.
 
 ### 2.5 Genetics, Gamete DNA & Phenotype Model
 - **Diploid Character Genotype (Immutable):** Stored as a structured representation of 23 chromosome pairs (22 autosomal pairs + 1 sex chromosome pair, `XX` or `XY`), carrying allele definitions for modeled Mendelian and polygenic traits (e.g., facial geometry, eye/hair/skin pigmentation, blood type, baseline biological predispositions).
@@ -422,7 +447,7 @@ princesspink/
 ### 3.4 Inter-Service Communication Patterns
 - **External / Frontend HTTP & WebSockets:** REST/HTML over HTTPS using the **Gin** framework, plus authenticated **WebSockets** over TLS (`wss://`) in `frontend-chat` for real-time bi-directional Global, Group, and 1-to-1 Direct Message chat delivery.
 - **Internal Synchronous RPC:** **gRPC with Protocol Buffers** (`pkg/proto`, see [ADR-0005](architecture/ADR-0005-shared-grpc-protobuf-contracts.md)) for low-latency, strongly typed internal calls (especially the high fan-out from `sheet-aggregator` to individual `attr-*` services, authorization/group-membership checks against `user-admin`, and direct calculation queries to `sim-birth-date`, `sim-egg-selection`, `sim-menarche`, and `sim-mortality`).
-- **Internal Asynchronous Events:** An event broker (**NATS JetStream** inside AKS or **Azure Service Bus**) for decoupled, reliable propagation of simulation ticks, chat pub/sub fan-out across pods, and biological/character lifecycle events (e.g., `sim.tick.advanced`, `sim.egg_reserve.created`, `sim.menarche.calculated`, `sim.egg.selected`, `sim.ovulation.triggered`, `sim.conception.occurred`, `sim.dna.calculated`, `sim.birthdate.calculated`, `sim.character.born`, `character.weight.updated`, `sim.deathdate.calculated`, `sim.character.deceased`).
+- **Internal Asynchronous Events:** An event broker (**NATS JetStream** inside AKS or **Azure Service Bus**) for decoupled, reliable propagation of simulation ticks, chat pub/sub fan-out across pods, and biological/character lifecycle events (e.g., `sim.tick.advanced`, `sim.egg_reserve.created`, `sim.menarche.calculated`, `sim.egg.selected`, `sim.ovulation.triggered`, `sim.conception.occurred`, `sim.dna.calculated`, `sim.birthdate.calculated`, `sim.character.born`, `character.weight.updated`, `character.medication.updated`, `sim.deathdate.calculated`, `sim.character.deceased`).
 - **Correlation & Idempotency:** Every request and event carries a `correlation_id`, `group_id`, and `character_uuid` (standardized on RFC 9562 UUIDv7 via `pkg/uuid`, see [ADR-0007](architecture/ADR-0007-shared-uuid-utilities.md)). Event consumers must be idempotent to safely handle at-least-once delivery.
 
 ### 3.5 Independent Microservice Versioning
@@ -441,13 +466,13 @@ The frontend is composed of multiple Go microservices built with the **Gin** HTT
 | Service | Responsibilities |
 | :--- | :--- |
 | `frontend-gateway` | Edge routing, authentication/session management (interacting with `user-admin`), CSRF protection, rate limiting, and authorization context injection. |
-| `frontend-sheets` | Renders the pen-and-paper character sheet UI, displays the Player's multi-character roster, handles single-character selection at Group start, character naming, parental child-ownership agreements, and allowed player actions. |
+| `frontend-sheets` | Renders the pen-and-paper character sheet UI, displays the Player's multi-character roster, handles single-character selection at Group start, character naming, parental child-ownership agreements, gender-filtered **Medical Drugs (Role Play)** checkboxes, and allowed player actions. |
 | `frontend-gm` | Game Master portal for managing groups, inviting/assigning players, verifying group-start character selections, inspecting all group player characters and NPC children, applying bounded role-play `weight_kg` adjustments, and configuring simulation clock and group parameters. |
 | `frontend-chat` | Renders the in-app chat interface (Global / World Chat with World Chat Server selector, Group Chat, and 1-to-1 Direct Messages) and manages authenticated WebSocket connections to `chat-service` and `chat-world-registry`. |
 | `portrait-renderer` | Generates and serves comic-style face portraits (SVG or rasterized PNG/WebP) from a character's phenotypic facial traits and age stage. |
 
 **UI/UX Design Principles:**
-- **Pen-and-Paper Character Sheet Aesthetic:** Structured layout inspired by classic tabletop RPG sheets—Header (Player-assigned Name, Character UUID, Lifecycle Status, Comic Face Portrait), Visible Appearance (`eye_color`, `hair_color`, `skin_color` reflecting current life-stage pigmentation), Physical & Medical Body Composition (`height_cm`, `weight_kg`, `BMI`, Body Fat Index/Percentage, Lean Body Mass, Skeletal Muscle Mass, Total Body Water, Bone Mass, Visceral Fat Rating, BMR, BSA, Ideal Weight Range), Core AD&D-Style Reproduction Attributes (`FER`, `CON`, `VIT`, `HOR`, `REC`, `COM` with scores and modifiers), Core Biological Stats, Genetic & Hereditary Summary, Reproductive Cycle/Status Indicators, and Lineage/Event History.
+- **Pen-and-Paper Character Sheet Aesthetic:** Structured layout inspired by classic tabletop RPG sheets—Header (Player-assigned Name, Character UUID, Lifecycle Status, Comic Face Portrait), Visible Appearance (`eye_color`, `hair_color`, `skin_color` reflecting current life-stage pigmentation), Physical & Medical Body Composition (`height_cm`, `weight_kg`, `BMI`, Body Fat Index/Percentage, Lean Body Mass, Skeletal Muscle Mass, Total Body Water, Bone Mass, Visceral Fat Rating, BMR, BSA, Ideal Weight Range), Core AD&D-Style Reproduction Attributes (`FER`, `CON`, `VIT`, `HOR`, `REC`, `COM` with scores and modifiers), **Medical Drugs (Role Play)** (gender-filtered checkboxes allowing the Player to toggle active medical drugs such as Viagra for males or the Contraception Pill for females), Core Biological Stats, Genetic & Hereditary Summary, Reproductive Cycle/Status Indicators, and Lineage/Event History.
 - **Rendering Strategy:** Server-rendered HTML templates (Go `html/template` or `templ`) enhanced with lightweight progressive interactivity (e.g., HTMX) or a clean JSON API served by Gin—keeping the entire frontend stack Go-native and fast.
 
 ---
@@ -466,11 +491,11 @@ The `user-admin` microservice is the authoritative source of identity, group mem
 - **Authentication & Sessions:** OAuth 2.0 / OpenID Connect (OIDC) compatible token flow or secure, `HttpOnly`, `Secure`, `SameSite=Strict` session cookies paired with short-lived signed JWTs (Ed25519 / RS256) and rotating refresh tokens with reuse detection.
 - **Multi-Factor Authentication (MFA):** Support for TOTP (RFC 6238) and optional WebAuthn/Passkeys, strongly recommended for Game Masters.
 - **Authorization Model (RBAC + Ownership/Group Scoping):**
-  - `PLAYER`: Read/roster access to all characters where `character.owner_user_id == current_user.id`; within any Group `G`, active play access is restricted to the single Character selected by the Player at the start of Group `G` (`GROUP_MEMBERSHIP.selected_character_id`), which must be already owned by the Player and **must not** have been conceived/born in Group `G` (`character.origin_group_id != G`). Players of a child's biological mother and father may also initiate and confirm the child's `OWNERSHIP_AGREEMENT` while the child is an unowned NPC (`owner_user_id == null`).
+  - `PLAYER`: Read/roster access to all characters where `character.owner_user_id == current_user.id`; within any Group `G`, active play access is restricted to the single Character selected by the Player at the start of Group `G` (`GROUP_MEMBERSHIP.selected_character_id`), which must be already owned by the Player and **must not** have been conceived/born in Group `G` (`character.origin_group_id != G`). For their active/owned living character, a Player may also toggle gender-eligible **Medical Drugs** via checkboxes on the character sheet (validated against `character.gender` and lifecycle state). Players of a child's biological mother and father may also initiate and confirm the child's `OWNERSHIP_AGREEMENT` while the child is an unowned NPC (`owner_user_id == null`).
   - `GAME_MASTER`: Read/supervisory access to all active player characters and NPC children living in `managed_groups(current_user.id)`, plus permission to adjust character `weight_kg` within the Group's configured biological/role-play parameters (`GROUP.simulation_config`).
   - Enforcement occurs at both `frontend-gateway` (coarse-grained) and backend services such as `sheet-aggregator` / `character-registry` (fine-grained defense in depth).
 - **Transport & Service Security:** TLS 1.3 externally; mTLS internally between Kubernetes pods.
-- **Audit Logging:** Immutable audit trail in PostgreSQL recording authentication events, role/group changes, GM access to player character sheets, and GM role-play `weight_kg` adjustments (capturing old/new values and rationale).
+- **Audit Logging:** Immutable audit trail in PostgreSQL recording authentication events, role/group changes, GM access to player character sheets, GM role-play `weight_kg` adjustments (capturing old/new values and rationale), and Player role-play medical drug checkbox changes.
 
 ---
 
@@ -478,13 +503,13 @@ The `user-admin` microservice is the authoritative source of identity, group mem
 To maximize modularity, independent scaling, and scientific maintainability, **each attribute or derived value displayed on a character sheet is computed by a dedicated Go microservice**.
 
 #### Components
-1. **Character Registry (`character-registry`):** Owns the canonical character record (`UUID`, nullable `owner_user_id`, `origin_group_id`, player-assigned `name`, `gender`, `lifecycle_state`, `date_of_birth`, `date_of_death`, `height_cm`, `weight_kg`, `mother_uuid`, `father_uuid`, and immutable diploid genome reference), parental child-ownership agreements (`OWNERSHIP_AGREEMENT`), and GM role-play weight adjustment history (`WEIGHT_ADJUSTMENT`) in PostgreSQL. Enforces that conceived/born children start as unowned NPCs, transitions ownership only upon mutual agreement between the mother's and father's Players, prevents a child from being selected as a playable character in its `origin_group_id`, and validates any GM `weight_kg` adjustment against the Group's configured biological/role-play parameter bounds before persisting and publishing `character.weight.updated`.
+1. **Character Registry (`character-registry`):** Owns the canonical character record (`UUID`, nullable `owner_user_id`, `origin_group_id`, player-assigned `name`, `gender`, `lifecycle_state`, `date_of_birth`, `date_of_death`, `height_cm`, `weight_kg`, `mother_uuid`, `father_uuid`, and immutable diploid genome reference), parental child-ownership agreements (`OWNERSHIP_AGREEMENT`), GM role-play weight adjustment history (`WEIGHT_ADJUSTMENT`), and active/historical character medical drug selections (`CHARACTER_MEDICAL_DRUG`) in PostgreSQL. Enforces that conceived/born children start as unowned NPCs, transitions ownership only upon mutual agreement between the mother's and father's Players, prevents a child from being selected as a playable character in its `origin_group_id`, validates any GM `weight_kg` adjustment against the Group's configured biological/role-play parameter bounds before persisting and publishing `character.weight.updated`, and validates Player medical drug checkbox toggles against character ownership, `gender` eligibility, and lifecycle state before persisting and publishing `character.medication.updated`.
 2. **Character Sheet Aggregator (`sheet-aggregator`):**
    - Receives a sheet request for `character_uuid` (after verifying Player/GM authorization).
-   - Fetches canonical metadata (including `gender`, `date_of_birth`, `date_of_death`, `lifecycle_state`, `height_cm`, `weight_kg`) from `character-registry` and executes a **concurrent parallel fan-out** (via Go `errgroup` + gRPC with strict per-call deadlines) to all applicable universal and **gender-specific** Attribute Microservices.
+   - Fetches canonical metadata (including `gender`, `date_of_birth`, `date_of_death`, `lifecycle_state`, `height_cm`, `weight_kg`, and active medical drugs) from `character-registry` and executes a **concurrent parallel fan-out** (via Go `errgroup` + gRPC with strict per-call deadlines) to all applicable universal and **gender-specific** Attribute Microservices.
    - Aggregates results into a unified `CharacterSheet` response.
    - Supports **graceful degradation**: if a non-critical attribute service is temporarily unavailable, the sheet still renders with a clearly marked `"unavailable"` field rather than failing the entire page.
-   - Caches short-lived attribute results keyed by `(character_uuid, sim_tick)` (invalidated immediately upon `character.weight.updated` events) to avoid redundant recomputation when simulation time has not advanced.
+   - Caches short-lived attribute results keyed by `(character_uuid, sim_tick)` (invalidated immediately upon `character.weight.updated` and `character.medication.updated` events) to avoid redundant recomputation when simulation time has not advanced.
 3. **Standardized Attribute Microservice Contract:**
    Every `attr-*` microservice implements a shared gRPC interface defined in `pkg/proto/attribute/v1`:
    ```protobuf
@@ -492,7 +517,7 @@ To maximize modularity, independent scaling, and scientific maintainability, **e
      rpc Calculate(CalculateRequest) returns (CalculateResponse);
    }
    ```
-   - `CalculateRequest`: `character_uuid`, `sim_tick`, optional context snapshot (`gender`, `date_of_birth`, `date_of_death`, `height_cm`, `weight_kg`, genome digest, lifecycle state).
+   - `CalculateRequest`: `character_uuid`, `sim_tick`, optional context snapshot (`gender`, `date_of_birth`, `date_of_death`, `height_cm`, `weight_kg`, active medical drugs, genome digest, lifecycle state).
    - `CalculateResponse`: `attribute_key`, `display_name`, `value`, `unit`, `confidence_or_range`, `computed_at_tick`, `schema_version`, `service_version`.
    - Examples of Attribute Microservices:
      - `attr-biological-age` (chronological & developmental stage derived from `date_of_birth` and `date_of_death` / current `sim_tick`)
@@ -517,8 +542,9 @@ To maximize modularity, independent scaling, and scientific maintainability, **e
      - `attr-repro-hormonal-balance` (AD&D-style **Hormonal Balance (`HOR`)** score & modifier influencing cycle regularity and readiness)
      - `attr-repro-receptivity` (AD&D-style **Receptivity (`REC`)** score & modifier influencing fertile-window and implantation mechanics)
      - `attr-repro-compatibility` (AD&D-style **Compatibility (`COM`)** score & modifier influencing gamete surface-fit and fusion rolls)
-     - `attr-menstruation-history` *(female-specific)* (`date_of_first_menstruation` / menarche, historical `menstruation_dates`, current cycle phase & next predicted cycle)
-     - `attr-spermatogenesis-profile` *(male-specific)* (pubertal onset, baseline sperm count/motility/viability parameters)
+     - `attr-menstruation-history` *(female-specific)* (`date_of_first_menstruation` / menarche, historical `menstruation_dates`, current cycle phase & next predicted cycle, reflecting any active **Contraception Pill** cycle modulation)
+     - `attr-spermatogenesis-profile` *(male-specific)* (pubertal onset, baseline sperm count/motility/viability parameters, `erection_quality` including any active **Viagra** boost, daily ejaculation frequency propensity, and short-interval ejaculation quality decay)
+     - `attr-medical-drugs` (active gender-eligible medical drugs toggled by the Player and their derived pharmacological/reproductive modifiers)
      - `attr-fertility-index` (gender-, age-, and cycle-adjusted reproductive readiness)
      - `attr-hormonal-profile` (gender-specific abstracted endocrine indicators)
      - `attr-genetic-traits` (expressed Mendelian/polygenic phenotypic traits)
@@ -537,13 +563,13 @@ The simulation engine decomposes human reproduction and life cycles into indepen
 | :--- | :--- | :--- |
 | `sim-clock` | Manages per-group simulation time (discrete ticks / calendar dates), publishes `sim.tick.advanced` events, and allows GMs to pause/step/adjust speed. | PostgreSQL / State store |
 | `sim-egg-reserve` | Triggered at the birth of every female character (`gender == FEMALE`). Generates all **egg cells (oocytes)** the girl carries with her at birth—each with its unique haploid DNA (22 autosomes + `X` via simulated meiosis from her diploid DNA), surface receptor profile, and baseline quality/viability traits—and stores them in a **dedicated SQLite database explicitly linked to the girl's `character_uuid`**. | Local SQLite (meiosis & receptor reference tables) + **Per-Female-Character Egg-Reserve SQLite DB** (linked to `character_uuid`) |
-| `sim-egg-selection` | Opens the **Egg-Cell SQLite database linked to a post-menarche female character's `character_uuid`** and determines **which specific egg cell drops (ovulates) during her next cycle** (modeling follicular recruitment, atresia, and dominant follicle selection modulated by age, `FER`, `HOR`, and `REC`). Marks the chosen egg cell as selected/ovulated and supplies its haploid DNA and surface profile to `sim-menstruation`, `sim-gamete-surface`, and `sim-conception`. | Local SQLite (follicular selection & atresia curves) + reads/updates **Per-Female-Character Egg-Reserve SQLite DB** |
+| `sim-egg-selection` | Opens the **Egg-Cell SQLite database linked to a post-menarche female character's `character_uuid`** and determines **which specific egg cell drops (ovulates) during her next cycle** (modeling follicular recruitment, atresia, and dominant follicle selection modulated by age, `FER`, `HOR`, `REC`, and active medical drugs such as the **Contraception Pill**, which suppresses or strongly inhibits ovulation). Marks the chosen egg cell as selected/ovulated and supplies its haploid DNA and surface profile to `sim-menstruation`, `sim-gamete-surface`, and `sim-conception`. | Local SQLite (follicular selection & atresia curves) + reads/updates **Per-Female-Character Egg-Reserve SQLite DB** |
 | `sim-menarche` | Calculates for a young female character (**Girl**) when her **first menstruation (menarche)** will occur (`date_of_first_menstruation`), based on her `date_of_birth`, genotype, developmental trajectory, and hormonal/health attributes (`HOR`, `CON`, `VIT`). Publishes `sim.menarche.calculated` to `character-registry` and `sim-menstruation`. | Local SQLite (pubertal onset & menarche statistical distributions) |
-| `sim-menstruation` | Tracks female-specific reproductive milestones (`date_of_first_menstruation` from `sim-menarche`, `menstruation_dates`), simulates ovarian/menstrual cycles (menstrual, follicular, ovulation, luteal phases) modulated by the mother's reproduction attributes (`FER`, `HOR`, `REC`), and coordinates with `sim-egg-selection` each cycle to retrieve the selected ovulated **egg cell (oocyte)**, its **haploid DNA**, and its **surface receptor profile**. | Local SQLite (cycle state & hormone lookup tables) + consumes `sim-egg-selection` |
-| `sim-ejaculation` | Models male spermatogenesis and ejaculation events modulated by the father's reproduction attributes (`FER`, `CON`, `VIT`, `HOR`). For each ejaculation, reads the male character's diploid DNA, performs meiosis for the simulated sperm cohort, and **builds a dedicated per-ejaculation SQLite database** containing all simulated **sperm cells** (each with its unique haploid DNA, sex chromosome `X`/`Y`, **surface ligand profile**, motility, morphology, and viability). | Local SQLite (reference distributions) + **Per-Ejaculation SQLite DB artifact** |
-| `sim-sperm-race` | Opens/reads the per-ejaculation SQLite database of sperm cells, simulates sperm transport ("race to the egg"): cervical mucus permeability (coupled to cycle phase and parental `HOR`/`REC`/`VIT` modifiers), capacitation, attrition curves, and chemotaxis, and produces an **arrival-ordered shortlist of viable candidate sperm cells** reaching the egg (since the fastest cell does not automatically win if its surface does not fit). | Local SQLite (reference physics/biology curves) + reads Ejaculation SQLite DB |
+| `sim-menstruation` | Tracks female-specific reproductive milestones (`date_of_first_menstruation` from `sim-menarche`, `menstruation_dates`), simulates ovarian/menstrual cycles (menstrual, follicular, ovulation, luteal phases) modulated by the mother's reproduction attributes (`FER`, `HOR`, `REC`) and active medical drugs (e.g., **Contraception Pill**, which influences the menstruation period cadence, duration, and hormonal withdrawal-bleed timing while suppressing natural ovulation), and coordinates with `sim-egg-selection` each cycle to retrieve the selected ovulated **egg cell (oocyte)**, its **haploid DNA**, and its **surface receptor profile**. | Local SQLite (cycle state & hormone lookup tables) + consumes `sim-egg-selection` |
+| `sim-ejaculation` | Models male spermatogenesis, `erection_quality`, and ejaculation events modulated by the father's reproduction attributes (`FER`, `CON`, `VIT`, `HOR`) and active medical drugs (e.g., **Viagra**, which increases `erection_quality` and raises the probability of **one or more ejaculations within a single day**). Tracks recent ejaculation timestamps so that **with each ejaculation within a short period of time, the quality of the ejaculation decreases** (`quality_factor` reducing sperm count, motility, morphology, and viability). For each ejaculation, reads the male character's diploid DNA, performs meiosis for the simulated sperm cohort, and **builds a dedicated per-ejaculation SQLite database** containing all simulated **sperm cells** (each with its unique haploid DNA, sex chromosome `X`/`Y`, **surface ligand profile**, motility, morphology, and viability). | Local SQLite (reference distributions & ejaculation-interval decay curves) + **Per-Ejaculation SQLite DB artifact** |
+| `sim-sperm-race` | Opens/reads the per-ejaculation SQLite database of sperm cells, simulates sperm transport ("race to the egg"): cervical mucus permeability (coupled to cycle phase, active **Contraception Pill** effects, and parental `HOR`/`REC`/`VIT` modifiers), capacitation, attrition curves, and chemotaxis, and produces an **arrival-ordered shortlist of viable candidate sperm cells** reaching the egg (since the fastest cell does not automatically win if its surface does not fit). | Local SQLite (reference physics/biology curves) + reads Ejaculation SQLite DB |
 | `sim-gamete-surface` | Evaluates molecular **surface compatibility between each arriving sperm cell and the viable egg cell** (modeling zona pellucida glycoprotein and oolemma receptor–ligand binding, modulated by parental `COM` and `REC` attributes). Iterates through arriving candidates from `sim-sperm-race`: if the fastest sperm cell's surface does not fit the egg cell, it is rejected and subsequent arriving candidates are tested until a surface-compatible sperm cell binds—or no candidate fits, resulting in non-fertilization. | Local SQLite (receptor–ligand compatibility matrices) + reads Ejaculation SQLite DB & selected Egg surface profile |
-| `sim-conception` | Pairs the surface-compatible winning sperm cell (confirmed by `sim-gamete-surface`) with the viable egg cell (selected by `sim-egg-selection` / tracked by `sim-menstruation`), evaluates oocyte availability window, membrane fusion, polyspermy block, and parental `CON`/`REC` implantation modifiers. Allocates a new **Character UUID** upon successful fertilization and emits `sim.conception.occurred` with mother UUID, father UUID, egg-cell DNA, and winning sperm-cell DNA. | Local SQLite / Event-driven |
+| `sim-conception` | Pairs the surface-compatible winning sperm cell (confirmed by `sim-gamete-surface`) with the viable egg cell (selected by `sim-egg-selection` / tracked by `sim-menstruation`), evaluates oocyte availability window, membrane fusion, polyspermy block, active **Contraception Pill** efficacy/implantation modifiers (strongly reducing the chance of conceiving a baby), and parental `CON`/`REC` implantation modifiers. Allocates a new **Character UUID** upon successful fertilization and emits `sim.conception.occurred` with mother UUID, father UUID, egg-cell DNA, and winning sperm-cell DNA. | Local SQLite / Event-driven |
 | `sim-dna` | Provides meiosis/gamete-DNA synthesis utilities (for egg cells and sperm cells) and performs fertilization DNA combination: merges the **egg cell's haploid DNA** (mother) and the **winning sperm cell's haploid DNA** (father) into the new character's immutable 23-pair diploid **DNA** and determines biological `gender` (`XX` → `FEMALE`, `XY` → `MALE`). | Local SQLite (gene loci & allele reference DB) + immutable genome store |
 | `sim-birth-date` | Calculates a character's **date of birth (`date_of_birth`)** from **either the mother's last menstruation date (LMP — Naegele's rule / gestational age model) or the exact date of conception** (gestation duration modulated by maternal `CON` and biological variance). Exposes synchronous gRPC calculation and emits `sim.birthdate.calculated` for `sim-gestation` and `character-registry`. | Local SQLite (gestational duration & LMP-to-delivery reference curves) |
 | `sim-gestation` | Tracks prenatal milestones from implantation through trimesters to birth, queries `sim-birth-date` to determine the scheduled `date_of_birth`, updates prenatal attributes, and emits `sim.character.born` upon delivery (triggering `sim-egg-reserve` and `sim-menarche` for newborn girls, and `sim-mortality` for all characters). | Local SQLite / Event-driven |
@@ -571,14 +597,14 @@ sequenceDiagram
     participant Menar as sim-menarche
     participant Mort as sim-mortality
 
-    Clock->>Mens: sim.tick.advanced (calendar date)
-    Mens->>EggSel: Select egg cell for mother's next cycle (mother_uuid)
+    Clock->>Mens: sim.tick.advanced (calendar date - applies active Contraception Pill cycle modulation)
+    Mens->>EggSel: Select egg cell for mother's next cycle (mother_uuid - suppressed if Contraception Pill blocks ovulation)
     EggSel->>EggDB: Query UUID-linked Egg-Reserve SQLite DB & mark selected egg cell
-    EggSel-->>Mens: Selected egg cell (cell_id, haploid DNA, surface profile)
-    Mens-->>Race: Fertile window, mucus state & maternal repro attribute modifiers
-    Note over Ejac,Surf: Reproductive try initiated (modulated by 6 AD&D-style reproduction attributes)
-    Ejac->>Reg: Fetch father diploid DNA & repro attributes (father_uuid)
-    Ejac->>EjacDB: Build per-ejaculation SQLite DB of sperm cells (haploid DNA + surface profile + motility/viability)
+    EggSel-->>Mens: Selected egg cell (cell_id, haploid DNA, surface profile) or suppressed ovulation
+    Mens-->>Race: Fertile window, mucus state & maternal repro attribute / medication modifiers
+    Note over Ejac,Surf: Reproductive try initiated (modulated by 6 AD&D-style reproduction attributes & active medical drugs)
+    Ejac->>Reg: Fetch father diploid DNA, repro attributes, active Viagra & recent ejaculation timestamps (father_uuid)
+    Ejac->>EjacDB: Build per-ejaculation SQLite DB of sperm cells (haploid DNA + surface profile + quality-decayed motility/viability)
     Ejac->>Race: Ejaculation event + SQLite DB reference
     Race->>EjacDB: Query & simulate sperm cell cohort race
     Race->>Surf: Arrival-ordered candidate sperm cells (fastest first)
@@ -612,7 +638,7 @@ sequenceDiagram
 
 #### Scientific Modeling Standards
 - **Reproducible Stochasticity:** All probabilistic biological processes use seeded pseudorandom number generators (`math/rand/v2` with explicit seeds derived from `group_id + sim_tick + event_id`) so simulation runs are auditable and reproducible in tests.
-- **Versioned Scientific Parameters & Service Versions:** Biological constants (e.g., mean luteal phase length, mutation rates, crossover probabilities, receptor-binding thresholds) are versioned configuration data rather than hardcoded magic numbers, and every simulation event records the emitting microservice's own version number.
+- **Versioned Scientific Parameters & Service Versions:** Biological constants (e.g., mean luteal phase length, mutation rates, crossover probabilities, receptor-binding thresholds, Viagra erection/frequency modifiers, short-interval ejaculation quality decay curves, and contraception pill cycle/efficacy curves) are versioned configuration data rather than hardcoded magic numbers, and every simulation event records the emitting microservice's own version number.
 
 ---
 
@@ -647,7 +673,7 @@ Hosted on **Azure Database for PostgreSQL (Flexible Server)** running **PostgreS
 - **Minimum Version Rationale (`PostgreSQL 18+`):** Generally Available across all Azure public regions with upstream security support through November 2030, providing native `uuidv7()` for PrincessPink's UUID-everywhere primary keys and cursor-paginated chat/audit/outbox tables, `RETURNING OLD/NEW` for atomic audit trails, SQL/JSON functions for `jsonb` (`simulation_config`), B-tree skip scans, Asynchronous I/O (`worker` mode on Azure), and hardened security (`SCRAM-SHA-256`, TLS 1.3, OAuth 2.0 / Microsoft Entra ID).
 - **Owned Domains:**
   - `user-admin`: Users, credentials (Argon2id hashes), MFA secrets, sessions/refresh tokens, groups, memberships (including each Player's single `selected_character_id` chosen at Group start), RBAC policies, and audit logs.
-  - `character-registry`: Character UUIDs, nullable player ownership (`owner_user_id`), `origin_group_id`, parental child-ownership agreements (`OWNERSHIP_AGREEMENT`), player-given names, `gender`, `date_of_birth`, `date_of_death`, `height_cm`, `weight_kg`, GM role-play weight adjustment history (`WEIGHT_ADJUSTMENT`), `lifecycle_state`, gender-specific milestone history (such as `date_of_first_menstruation` and `menstruation_dates`), ovarian Egg-Reserve SQLite DB links (mapped to female `character_uuid`), mother/father lineage links, and immutable diploid genome records (or references).
+  - `character-registry`: Character UUIDs, nullable player ownership (`owner_user_id`), `origin_group_id`, parental child-ownership agreements (`OWNERSHIP_AGREEMENT`), player-given names, `gender`, `date_of_birth`, `date_of_death`, `height_cm`, `weight_kg`, GM role-play weight adjustment history (`WEIGHT_ADJUSTMENT`), active and historical role-play medical drug selections (`CHARACTER_MEDICAL_DRUG`), `lifecycle_state`, gender-specific milestone history (such as `date_of_first_menstruation` and `menstruation_dates`), ovarian Egg-Reserve SQLite DB links (mapped to female `character_uuid`), mother/father lineage links, and immutable diploid genome records (or references).
   - `chat-service` & `chat-world-registry`: World Chat Server catalog, per-user server preferences, chat channels (`GLOBAL`, `GROUP`, `DIRECT`), message history, participant metadata, mute/block lists, and moderation audit logs (see [ADR-0002](architecture/ADR-0002-world-chat-microservices-and-server-selection.md)).
 - **Schema Isolation:** Logical separation via dedicated PostgreSQL schemas (e.g., `user_admin.*`, `character_registry.*`, `chat.*`) with per-service database credentials and least-privilege grants.
 
@@ -674,7 +700,7 @@ Selected simulation microservices use embedded **SQLite** databases for low-late
 4. **Per-Ejaculation SQLite Databases (Event-Scoped Gamete Artifacts):**
    - Each ejaculation event triggers `sim-ejaculation` to construct a self-contained SQLite database file (e.g., `ejaculation_<event_uuid>.sqlite`) populated with the individual simulated **sperm cells** calculated via meiosis from the male character's diploid DNA.
    - **Logical Schema:**
-     - `ejaculation_meta` (`ejaculation_id`, `father_uuid`, `group_id`, `sim_tick`, `prng_seed`, `cell_count`, `created_at`)
+     - `ejaculation_meta` (`ejaculation_id`, `father_uuid`, `group_id`, `sim_tick`, `prng_seed`, `cell_count`, `erection_quality`, `quality_factor`, `recent_ejaculation_count`, `created_at`)
      - `sperm_cells` (`cell_id`, `sex_chromosome` [`X` | `Y`], `haploid_dna` [compact binary chromosome encoding], `surface_profile` [compact binary receptor/ligand signature], `motility_score`, `morphology_score`, `viability_score`, `status`)
    - **Build & Lifecycle in Kubernetes:** Written in a single batched transaction on local ephemeral NVMe/tmpfs storage (with `PRAGMA journal_mode=OFF; PRAGMA synchronous=OFF;` during creation), then sealed read-only and published to shared artifact storage (e.g., **Azure Blob Storage** or a shared ReadWriteMany volume) for consumption by `sim-sperm-race`, `sim-gamete-surface`, and `sim-conception`. Once the race, surface-compatibility check, and conception evaluation complete, the winning sperm cell's DNA is preserved in the child's conception record and the temporary SQLite artifact is garbage-collected or archived according to the group's retention policy.
 
@@ -722,7 +748,7 @@ PrincessPink runs on **Azure Kubernetes Service (AKS)** with workload isolation 
 
 ### 7.2 Testing Strategy
 - **Unit Tests:** Pure Go tests for biological formulas, genetic crossover/recombination math, hormonal curves, and RBAC rules.
-- **Deterministic Simulation Tests:** Fixed-seed end-to-end reproduction scenarios verifying statistical invariants (e.g., Mendelian ratios, expected sex-chromosome distribution ~50/50 over large cohorts, cycle duration bounds).
+- **Deterministic Simulation Tests:** Fixed-seed end-to-end reproduction scenarios verifying statistical invariants (e.g., Mendelian ratios, expected sex-chromosome distribution ~50/50 over large cohorts, cycle duration bounds, Viagra erection-quality and multi-ejaculation daily frequency increases alongside short-interval ejaculation quality decay, and contraception pill menstruation-period modulation and conception-chance reduction).
 - **Contract Tests:** Protobuf schema compatibility checks (`buf breaking`) and OpenAPI validation stored under `docs/api/`.
 - **Integration Tests:** Containerized tests (e.g., Testcontainers with PostgreSQL 18+ and NATS) verifying authentication flows, authorization boundaries (Player vs. GM), and event pipelines.
 - **Load & Resilience Tests:** Verifying `sheet-aggregator` fan-out latency and graceful degradation when individual `attr-*` services experience latency or failure.
@@ -780,6 +806,7 @@ PrincessPink runs on **Azure Kubernetes Service (AKS)** with workload isolation 
 - **Ejaculation Database:** A dedicated, event-scoped **SQLite database** built by `sim-ejaculation` for a male character's ejaculation event, storing all simulated sperm cells in that ejaculation along with their individual haploid DNA (derived from the father's DNA), surface ligand profile, and motility/viability attributes.
 - **Game Master (GM):** A user role responsible for managing a simulation Group (campaign). Game Masters can view all character sheets of players and NPCs within their group(s), control group-level simulation settings, adjust character `weight_kg` within configured biological/role-play parameters (with full audit logging), and participate in and moderate their Group Chat.
 - **Group:** A logical simulation world or campaign managed by a Game Master, grouping Players and their Characters together under a shared simulation clock and dedicated Group Chat. Within a Group, each Player plays **only one Character**, selected at the start of the Group from the Characters they already own; children conceived or born in the Group live there as NPCs and can only be played in a future Group.
+- **Medical Drugs (Role Play):** Gender-eligible pharmacological modifiers (such as **Viagra** for `MALE` characters and the **Contraception Pill** for `FEMALE` characters) that a Player can enable or disable for their character by clicking the checkbox in front of each eligible drug on the character sheet. Active medical drugs influence the simulation deterministically—Viagra increases erection quality and the chance of one or more ejaculations within a day (interacting with progressive ejaculation quality decrease when multiple ejaculations occur within a short period of time), while the contraception pill influences the female menstruation period and substantially reduces the chance of conceiving a baby.
 - **Menarche (Date of First Menstruation):** A female-specific biological milestone calculated for a young female character by `sim-menarche`, recording the simulated calendar date of her first menstruation, followed by ongoing recorded `menstruation_dates`.
 - **NPC (Non-Player Character) & Child Ownership Agreement:** Children conceived or born during a simulation start as unowned **NPCs** (`owner_user_id = null`) until the Players of the mother and the father reach a mutual **Ownership Agreement** deciding who takes ownership of the child. Even after ownership is assigned, the child remains an NPC in the Group where its mother and father live and can only be selected as a playable character in a **future Group**.
 - **Phenotype:** The observable biological and visual traits of a character (such as facial features, `eye_color`, `hair_color`, `skin_color`, and vitality scores), derived from the character's DNA combined with gender, age, and lifecycle state—including traits that naturally shift after birth and during life.
