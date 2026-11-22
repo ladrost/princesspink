@@ -706,7 +706,7 @@ sequenceDiagram
         Gest->>BDate: Calculate date_of_birth (from mother's last menstruation OR conception date, factoring Rh compatibility)
         BDate-->>Gest: Scheduled date_of_birth (sim.birthdate.calculated)
         Gest->>Health: Apply maternal pregnancy hemodynamic shifts (elevated waking heart rate)
-        Gest->>Reg: sim.character.born (state = ALIVE, set date_of_birth; update mother rh_sensitized if Rh- / Rh+ sensitized)
+        Gest->>Reg: sim.character.born (state = ALIVE, set date_of_birth - update mother rh_sensitized if Rh- / Rh+ sensitized)
         Gest->>Health: Initialize newborn health profile, blood-type baselines & lifecycle waking HR (character_uuid)
         Health-->>Reg: Persist initial CHARACTER_HEALTH_PROFILE (sim.health.updated)
         Gest->>Mort: Calculate natural date_of_death for newborn Character
