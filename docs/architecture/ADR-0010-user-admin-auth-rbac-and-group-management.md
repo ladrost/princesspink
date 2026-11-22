@@ -112,7 +112,7 @@ sequenceDiagram
     UA->>Bus: Publish group.character.selected
 
     GM->>UA: StartGroup(group_id, sim_start_date="dd/MM/YYYY")
-    UA->>PG: Validate all active Players selected a PC; set status=ACTIVE, lock selections + RETURNING OLD/NEW audit_log + outbox
+    UA->>PG: Validate all active Players selected a PC - set status=ACTIVE, lock selections + RETURNING OLD/NEW audit_log + outbox
     UA->>Bus: Publish group.started (consumed by sim-clock at 0:00 h)
 ```
 
