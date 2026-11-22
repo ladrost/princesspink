@@ -1,0 +1,16 @@
+# JetBrains Qodana configuration for PrincessPink (Go multi-module workspace)
+# Docs: https://www.jetbrains.com/help/qodana/configuration-reference.html
+version: "1.0"
+
+linter: jetbrains/qodana-go:latest
+
+failThreshold: 0
+
+profile:
+  name: qodana.recommended
+  inspections:
+    - group: ALL
+      ignore:
+        - "pkg/proto/gen"
+        - "bin"
+        - ".coverage"
