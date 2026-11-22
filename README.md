@@ -59,7 +59,7 @@ PrincessPink enforces a strict, non-negotiable **zero-violence, zero-nudity** po
 | **Language & Workspace** | Go 1.27+ (`go.work` multi-module workspace, independent semantic versioning per service) |
 | **Frontend Microservices** | Go + **Gin** HTTP framework (`frontend-gateway`, `frontend-sheets`, `frontend-gm`, `frontend-chat`, `portrait-renderer`) with server-rendered HTML/HTMX and authenticated WebSockets (`wss://`) |
 | **Internal Communication** | **gRPC / Protocol Buffers** (`pkg/proto`, [ADR-0005](docs/architecture/ADR-0005-shared-grpc-protobuf-contracts.md)) for synchronous RPC & parallel attribute fan-out; **NATS JetStream** (or Azure Service Bus) for simulation ticks, lifecycle events, and chat pub/sub |
-| **User Administration & Security** | `user-admin` backed by **PostgreSQL 18+** with `Argon2id` password hashing, MFA (TOTP / WebAuthn), RBAC (`PLAYER` / `GAME_MASTER`), TLS 1.3 / mTLS, and immutable audit logging |
+| **User Administration & Security** | `user-admin` backed by **PostgreSQL 18+** with `Argon2id` password hashing, MFA (TOTP / WebAuthn), RBAC (`PLAYER` / `GAME_MASTER`), TLS 1.3 / mTLS, and immutable audit logging ([ADR-0010](docs/architecture/ADR-0010-user-admin-auth-rbac-and-group-management.md)) |
 | **Character Sheet & Attributes** | `character-registry`, `sheet-aggregator` (concurrent `errgroup` fan-out with graceful degradation and tick-based caching), and dedicated `attr-*` microservices |
 | **Simulation & Genetics Engine** | Event-driven Go microservices (`sim-clock`, `sim-egg-reserve`, `sim-egg-selection`, `sim-menarche`, `sim-menstruation`, `sim-ejaculation`, `sim-sperm-race`, `sim-gamete-surface`, `sim-conception`, `sim-dna`, `sim-birth-date`, `sim-gestation`, `sim-health`, `sim-mortality`, `sim-lifecycle`) using **SQLite** for scientific reference data, per-female egg-reserve databases, and per-ejaculation sperm-cell artifacts |
 | **Real-Time Chat** | `frontend-chat` + `chat-service` + `chat-world-registry` with player-selectable World Chat Servers (`chat.world.<world_server_id>`), PostgreSQL 18+ persistence (`chat.*` schema), NATS JetStream fan-out, rate limiting, and content-policy moderation ([ADR-0002](docs/architecture/ADR-0002-world-chat-microservices-and-server-selection.md)) |
@@ -137,7 +137,7 @@ make versions
 
 PrincessPink is currently in **Phase 0 / Architectural Foundation**. Planned implementation phases (detailed in [docs/Concept.md](docs/Concept.md#9-phased-implementation-roadmap)):
 
-1. **Phase 1 — Platform Foundation:** Shared `pkg/` libraries (logging [ADR-0003](docs/architecture/ADR-0003-shared-logging-library.md), OpenTelemetry [ADR-0004](docs/architecture/ADR-0004-shared-opentelemetry-observability.md), gRPC contracts [ADR-0005](docs/architecture/ADR-0005-shared-grpc-protobuf-contracts.md), config [ADR-0006](docs/architecture/ADR-0006-shared-configuration-library.md), UUID utilities [ADR-0007](docs/architecture/ADR-0007-shared-uuid-utilities.md)), `Makefile` ([ADR-0008](docs/architecture/ADR-0008-multi-module-makefile-build-automation.md)), GitHub Actions CI ([ADR-0009](docs/architecture/ADR-0009-github-actions-ci-cd.md)), and `user-admin` with PostgreSQL, Argon2id auth, RBAC, and Group management.
+1. **Phase 1 — Platform Foundation:** Shared `pkg/` libraries (logging [ADR-0003](docs/architecture/ADR-0003-shared-logging-library.md), OpenTelemetry [ADR-0004](docs/architecture/ADR-0004-shared-opentelemetry-observability.md), gRPC contracts [ADR-0005](docs/architecture/ADR-0005-shared-grpc-protobuf-contracts.md), config [ADR-0006](docs/architecture/ADR-0006-shared-configuration-library.md), UUID utilities [ADR-0007](docs/architecture/ADR-0007-shared-uuid-utilities.md)), `Makefile` ([ADR-0008](docs/architecture/ADR-0008-multi-module-makefile-build-automation.md)), GitHub Actions CI ([ADR-0009](docs/architecture/ADR-0009-github-actions-ci-cd.md)), and `user-admin` with PostgreSQL, Argon2id auth, RBAC, and Group management ([ADR-0010](docs/architecture/ADR-0010-user-admin-auth-rbac-and-group-management.md)).
 2. **Phase 2 — Character Sheet, Chat & Frontend MVP:** `frontend-gateway`, `frontend-sheets`, `frontend-gm`, `frontend-chat`, `chat-service`, `chat-world-registry` (player-selectable World Chat Servers, Group Chat, and 1-to-1 Direct Messages), `character-registry`, `sheet-aggregator`, initial `attr-*` microservices, and `portrait-renderer`.
 3. **Phase 3 — Core Reproduction Simulation Pipeline:** `sim-clock`, `sim-egg-reserve`, `sim-egg-selection`, `sim-menarche`, `sim-menstruation`, `sim-ejaculation`, `sim-sperm-race`, `sim-gamete-surface`, `sim-conception`, and `sim-dna` with SQLite stores, event bus integration, and fixed-seed cohort tests.
 4. **Phase 4 — Full Lifecycle & Population Features:** `sim-birth-date`, `sim-gestation`, `sim-health`, `sim-mortality`, `sim-lifecycle`, multi-generational family trees, and Game Master population analytics.
@@ -159,6 +159,7 @@ PrincessPink is currently in **Phase 0 / Architectural Foundation**. Planned imp
   - [ADR-0007: Shared UUID Utilities Library (`pkg/uuid`)](docs/architecture/ADR-0007-shared-uuid-utilities.md)
   - [ADR-0008: Multi-Module Developer Workflow & Build Automation (`Makefile`)](docs/architecture/ADR-0008-multi-module-makefile-build-automation.md)
   - [ADR-0009: GitHub Actions CI/CD Architecture (`.github/workflows/`)](docs/architecture/ADR-0009-github-actions-ci-cd.md)
+  - [ADR-0010: User Administration Service (`user-admin`) — PostgreSQL 18+, Argon2id Auth, Player/GM RBAC & Group Management](docs/architecture/ADR-0010-user-admin-auth-rbac-and-group-management.md)
 - **[Operational Runbooks (`docs/runbooks/`)](docs/runbooks/)** — Deployment, backup, and incident response runbooks (planned).
 
 ---
@@ -184,7 +185,7 @@ This project adheres to the Contributor Covenant Code of Conduct (version 2.0). 
 
 ## Security
 
-PrincessPink is designed with security in mind (`Argon2id`, MFA, RBAC, TLS 1.3/mTLS, `govulncheck`, and Trivy image scanning—see [docs/Concept.md](docs/Concept.md#42-user-administration--security-service)).
+PrincessPink is designed with security in mind (`Argon2id`, MFA, RBAC, TLS 1.3/mTLS, `govulncheck`, and Trivy image scanning—see [docs/Concept.md](docs/Concept.md#42-user-administration--security-service) and [ADR-0010](docs/architecture/ADR-0010-user-admin-auth-rbac-and-group-management.md)).
 
 If you discover a security vulnerability, please **do not** open a public issue. Instead, report it privately to the project maintainers (e.g., via GitHub Security Advisories) with sufficient detail to reproduce and assess the issue.
 
