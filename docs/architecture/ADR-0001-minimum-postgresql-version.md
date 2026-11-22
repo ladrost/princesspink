@@ -12,7 +12,7 @@
 PrincessPink uses a polyglot persistence architecture in which **Azure Database for PostgreSQL (Flexible Server)** serves as the authoritative central transactional store for:
 
 - `user-admin` (`user_admin.*` schema): Users, `Argon2id` password hashes, MFA secrets, sessions/refresh tokens, groups, RBAC policies, and immutable audit logs.
-- `character-registry` (`character_registry.*` schema): Canonical character records (`UUID`, ownership, group scoping, `gender`, `lifecycle_state`, `date_of_birth`, `date_of_death`, `date_of_first_menstruation`, `menstruation_dates`, Egg-Reserve SQLite DB links, parental lineage, and immutable diploid genome references).
+- `character-registry` (`character_registry.*` schema): Canonical character records (`UUID`, ownership, group scoping, `gender`, `lifecycle_state`, `date_of_birth`, `date_of_death`, `height_cm`, `weight_kg`, GM role-play weight adjustment audit history, `date_of_first_menstruation`, `menstruation_dates`, Egg-Reserve SQLite DB links, parental lineage, and immutable diploid genome references).
 - `chat-service` (`chat.*` schema): Global, Group, and 1-to-1 Direct Message channels, cursor-paginated message history, read markers, mute/block lists, and moderation audit logs.
 - `sim-clock` and transactional outbox tables used to guarantee atomic state commits and event bus publication.
 

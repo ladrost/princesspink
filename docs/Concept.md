@@ -43,6 +43,7 @@ erDiagram
     CHARACTER ||--o{ EJACULATION_DB : "male generates SQLite DB"
     EJACULATION_DB ||--|{ SPERM_CELL : "contains haploid"
     CHARACTER ||--o{ LIFECYCLE_EVENT : "records"
+    CHARACTER ||--o{ WEIGHT_ADJUSTMENT : "records GM role-play changes"
 
     USER {
         uuid id PK
@@ -119,6 +120,19 @@ erDiagram
         date date_of_birth "nullable before birth"
         date date_of_death "nullable while alive"
         date date_of_first_menstruation "female-only, nullable"
+        float height_cm "nullable before birth; height in cm"
+        float weight_kg "nullable before birth; weight in kg, GM-adjustable within params"
+    }
+
+    WEIGHT_ADJUSTMENT {
+        uuid id PK
+        uuid character_id FK
+        uuid group_id FK
+        uuid adjusted_by_gm_id FK
+        float previous_weight_kg
+        float new_weight_kg
+        string reason "role-play rationale"
+        timestamp adjusted_at_sim
     }
 
     MENSTRUATION_CYCLE {
@@ -168,7 +182,7 @@ erDiagram
 
 ### 2.2 Roles, Character Ownership & Group Participation Rules
 - **Player (User):** Authenticated user identified by a unique `UUID`. A Player may own **multiple Characters** in their personal roster, has read/interaction access to the character sheets of their owned characters, and can communicate via **Global / World Chat**, their assigned **Group Chat(s)**, and private **1-to-1 Direct Messages** with other Players.
-- **Game Master (GM):** Authenticated user who manages one or more **Groups** (simulation worlds/campaigns). A Game Master has visibility into all active player characters and NPC children living within their group(s), controls group-level simulation settings (e.g., simulation clock speed, starting population parameters), and participates in and moderates the **Group Chat** for his/her Group(s) alongside Global / World Chat and Direct Messages.
+- **Game Master (GM):** Authenticated user who manages one or more **Groups** (simulation worlds/campaigns). A Game Master has visibility into all active player characters and NPC children living within their group(s), controls group-level simulation settings (e.g., simulation clock speed, starting population parameters, and role-play weight adjustment bounds), may adjust a character's `weight_kg` within configured biological/role-play parameters for storytelling (with full audit logging), and participates in and moderates the **Group Chat** for his/her Group(s) alongside Global / World Chat and Direct Messages.
 - **One Character per Player per Group:** Although a Player may own multiple Characters across their account, **within any single Group a Player plays only one Character**. At the **start of the Group**, each Player selects that single active Character from the Characters they already own (`GROUP_MEMBERSHIP.selected_character_id`).
 - **Children as NPCs & Parental Ownership Agreement:** Every child **conceived or born during a simulation** enters the simulation as an **NPC (Non-Player Character)** with no Player owner (`owner_user_id = null`). The child remains an unowned NPC until the **Players of the mother and the father reach a mutual agreement** (`OWNERSHIP_AGREEMENT`) deciding which of them takes ownership of the child. Once both parents' Players agree, `owner_user_id` is assigned and the child is added to that Player's personal character roster.
 - **Future-Group-Only Playability for Children:** Even after parental ownership is agreed and assigned to a Player, **a child can never be played as a Player Character in the Group where the mother and father live** (`origin_group_id`). Within that origin Group, the child continues to live strictly as an NPC; the owning Player may only select and play that child in a **future Group** at the start of that new Group.
@@ -204,6 +218,26 @@ Every character carries both universal lifecycle attributes and biologically gro
   - `hair_color`: Current expressed hair pigmentation (e.g., blonde, red, light/dark brown, black, silver/gray, white).
   - `skin_color`: Current expressed skin pigmentation tone.
   - **Dynamic Changes After Birth & During Life:** While each character's pigmentation baseline is anchored in their immutable diploid DNA, `eye_color`, `hair_color`, and `skin_color` are **not static**—they may change after birth and throughout life based on developmental stage, aging, hormonal shifts, and environmental/biological factors (for example, newborn eye color darkening during infancy, childhood hair darkening or graying/whitening with age, and gradual age- or environment-driven skin tone shifts).
+- **Physical Measurements & Medical Body Composition Attributes (Shown on All Character Sheets):**
+  Every living character carries anthropometric measurements together with derived clinical values equivalent to those calculated by a medical body-composition scale, recalculated dynamically as age, growth, gestation, or role-play weight changes occur:
+  - **Core Measurements:**
+    - `height_cm`: Current height in **centimeters (`cm`)**, anchored in polygenic DNA and evolving naturally across developmental stages (birth length, infancy/childhood growth, pubertal growth spurt, adult plateau, and subtle late-life decline).
+    - `weight_kg`: Current body mass in **kilograms (`kg`)**, evolving naturally with age, growth, and pregnancy (`sim-gestation`).
+    - **Game Master Role-Play Weight Adjustment:** For tabletop role-play storytelling (e.g., lifestyle, nutrition, or narrative arcs), a **Game Master** may adjust `weight_kg` for any character (PC or NPC) within their managed Group(s), strictly constrained by **bounded parameters** configured in `GROUP.simulation_config` and enforced by `character-registry`:
+      - Age- and height-scaled **minimum and maximum physiological weight bounds** (e.g., safe BMI/pediatric percentile limits so impossible or harmful extremes cannot be entered, preserving the zero-violence/natural-lifecycle policy).
+      - Configurable **maximum change per adjustment (`max_delta_kg` / `max_delta_pct`)** and optional cooldown period to keep weight transitions realistic for role-play.
+      - Mandatory **role-play reason** and immutable audit recording (`WEIGHT_ADJUSTMENT`), emitting `character.weight.updated` so all derived medical body-composition metrics recalculate automatically.
+  - **Derived Medical Body-Composition Values (Calculated from `height_cm`, `weight_kg`, `gender`, Age & Lifecycle State):**
+    - `bmi`: **Body Mass Index (`kg/m²`)** (`weight_kg / (height_cm / 100)²`) with WHO adult classification band or age/sex-adjusted pediatric percentile band.
+    - `body_fat_percentage` & `body_fat_index`: **Body Fat Percentage (`%`) & Body Fat Index** (sex- and age-adjusted anthropometric estimate modulated by genotype and hormonal state, plus Fat Mass Index `fat_mass_kg / (height_cm / 100)²`).
+    - `lean_body_mass_kg`: **Lean Body Mass / Fat-Free Mass (`kg`)** (non-adipose body mass derived from height, weight, sex, and body fat percentage).
+    - `muscle_mass_kg` & `muscle_mass_pct`: **Skeletal Muscle Mass (`kg` & `%`)** (estimated lean skeletal muscle share adjusted for sex and age stage).
+    - `total_body_water_pct` & `total_body_water_l`: **Total Body Water (`%` & `L`)** (hydration volume and percentage estimated via sex-, age-, height-, and weight-adjusted clinical formulas such as Watson).
+    - `bone_mass_kg`: **Estimated Bone Mass (`kg`)** (skeletal mineral mass reflecting pubertal bone accrual and age-related density shifts).
+    - `visceral_fat_rating`: **Visceral Fat Rating (index)** (clinical scale indicator of abdominal/visceral adipose level).
+    - `bmr_kcal`: **Basal Metabolic Rate (`kcal/day`)** (resting daily energy expenditure via Mifflin-St Jeor using `weight_kg`, `height_cm`, age, and `gender`).
+    - `bsa_m2`: **Body Surface Area (`m²`)** (clinical body surface area via Mosteller/Du Bois formula from `height_cm` and `weight_kg`).
+    - `ideal_weight_range_kg`: **Ideal / Healthy Weight Range (`kg`)** (reference weight band for the character's current `height_cm`, `gender`, and age stage).
 - **Core Reproduction Attributes (AD&D-Style RPG Stats, Shown on All Character Sheets):**
   Inspired by classic AD&D ability scores (e.g., Strength, Constitution), every character sheet displays **6 tabletop-style numeric attributes** (such as a `3–18` scale with derived positive/negative modifiers) specifically tailored to human reproduction. Derived from genotype, age, health, and lifecycle state, **these attributes directly modify the probability and mechanics of every reproduction try**:
   1. **Fertility (`FER`):** Baseline gamete production capacity and reproductive reserve (follicular/ovarian quality in females; spermatogenesis output in males). Modifies gamete availability and base conception chance on each attempt.
@@ -226,7 +260,7 @@ Every character carries both universal lifecycle attributes and biologically gro
 - **Egg Cell (Oocyte) Haploid DNA, Surface Profile & Ovarian Egg-Reserve SQLite Database:** Mirroring human biology, a female character carries her lifetime supply of egg cells from birth. When a girl is born (`gender == FEMALE`), `sim-egg-reserve` generates all egg cells she carries with her and stores them in a **dedicated SQLite database explicitly linked to the girl's `character_uuid`**. Each stored egg cell carries its own **haploid DNA** (22 single autosomes + 1 `X` chromosome, calculated via simulated meiosis with homologous crossover/recombination, independent assortment, and rare point mutations from her diploid DNA), an egg **surface profile** (zona pellucida and oolemma binding receptors), and baseline viability/quality traits. During each menstrual cycle after menarche, `sim-egg-selection` queries the girl's linked Egg-Cell SQLite database to determine **which specific egg cell drops (ovulates) during her next cycle**.
 - **Sperm Cell Haploid DNA, Surface Profile & Ejaculation SQLite Database:** Each ejaculation event by a male character builds a **dedicated SQLite database** containing all simulated sperm cells included in that ejaculation. Every sperm cell record is individually calculated from the father's diploid DNA via simulated meiosis—yielding its own unique **haploid DNA** (22 single autosomes + either an `X` or `Y` sex chromosome) alongside cell-level physical traits (motility, morphology, viability) and a **surface profile** (acrosome/membrane binding ligands).
 - **Offspring DNA Calculation from Mother and Father:** Fertilization requires not only that a sperm cell reaches the egg, but also that its surface profile **fits the egg cell's surface**—just as in biology, the fastest sperm cell does not always win. When a surface-compatible winning sperm cell fertilizes a specific egg cell, the new character's immutable diploid DNA (23 chromosome pairs) is calculated directly by pairing the **egg cell's haploid DNA** (from the mother) with the **winning sperm cell's haploid DNA** (from the father's ejaculation SQLite database). This guarantees true gamete-level Mendelian and polygenic inheritance and naturally determines the offspring's `gender` (`XX` or `XY`).
-- **Phenotype (Derived):** Computed dynamically by Character Sheet Attribute Microservices from the character's immutable genotype combined with current simulation state (age derived from `date_of_birth` / `date_of_death`, gender, hormonal phase, health state). This includes `eye_color`, `hair_color`, and `skin_color`, which can evolve after birth and across life stages, as well as the character's 6 AD&D-style reproduction attributes.
+- **Phenotype (Derived):** Computed dynamically by Character Sheet Attribute Microservices from the character's immutable genotype combined with current simulation state (age derived from `date_of_birth` / `date_of_death`, gender, `height_cm`, `weight_kg`, hormonal phase, health state). This includes `eye_color`, `hair_color`, and `skin_color`, which can evolve after birth and across life stages, derived medical body-composition metrics (`BMI`, Body Fat Index, Lean Body Mass, Muscle Mass, Total Body Water, Bone Mass, Visceral Fat, BMR, BSA, Ideal Weight Range), as well as the character's 6 AD&D-style reproduction attributes.
 - **Comic Face Portrait:** Derived deterministically from facial phenotype traits (including current `eye_color`, `hair_color`, and `skin_color`), gender, and current age stage, producing a stylized comic-art portrait (head/shoulders only) displayed on the character sheet.
 
 ---
@@ -388,7 +422,7 @@ princesspink/
 ### 3.4 Inter-Service Communication Patterns
 - **External / Frontend HTTP & WebSockets:** REST/HTML over HTTPS using the **Gin** framework, plus authenticated **WebSockets** over TLS (`wss://`) in `frontend-chat` for real-time bi-directional Global, Group, and 1-to-1 Direct Message chat delivery.
 - **Internal Synchronous RPC:** **gRPC with Protocol Buffers** (`pkg/proto`, see [ADR-0005](architecture/ADR-0005-shared-grpc-protobuf-contracts.md)) for low-latency, strongly typed internal calls (especially the high fan-out from `sheet-aggregator` to individual `attr-*` services, authorization/group-membership checks against `user-admin`, and direct calculation queries to `sim-birth-date`, `sim-egg-selection`, `sim-menarche`, and `sim-mortality`).
-- **Internal Asynchronous Events:** An event broker (**NATS JetStream** inside AKS or **Azure Service Bus**) for decoupled, reliable propagation of simulation ticks, chat pub/sub fan-out across pods, and biological lifecycle events (e.g., `sim.tick.advanced`, `sim.egg_reserve.created`, `sim.menarche.calculated`, `sim.egg.selected`, `sim.ovulation.triggered`, `sim.conception.occurred`, `sim.dna.calculated`, `sim.birthdate.calculated`, `sim.character.born`, `sim.deathdate.calculated`, `sim.character.deceased`).
+- **Internal Asynchronous Events:** An event broker (**NATS JetStream** inside AKS or **Azure Service Bus**) for decoupled, reliable propagation of simulation ticks, chat pub/sub fan-out across pods, and biological/character lifecycle events (e.g., `sim.tick.advanced`, `sim.egg_reserve.created`, `sim.menarche.calculated`, `sim.egg.selected`, `sim.ovulation.triggered`, `sim.conception.occurred`, `sim.dna.calculated`, `sim.birthdate.calculated`, `sim.character.born`, `character.weight.updated`, `sim.deathdate.calculated`, `sim.character.deceased`).
 - **Correlation & Idempotency:** Every request and event carries a `correlation_id`, `group_id`, and `character_uuid` (standardized on RFC 9562 UUIDv7 via `pkg/uuid`, see [ADR-0007](architecture/ADR-0007-shared-uuid-utilities.md)). Event consumers must be idempotent to safely handle at-least-once delivery.
 
 ### 3.5 Independent Microservice Versioning
@@ -408,12 +442,12 @@ The frontend is composed of multiple Go microservices built with the **Gin** HTT
 | :--- | :--- |
 | `frontend-gateway` | Edge routing, authentication/session management (interacting with `user-admin`), CSRF protection, rate limiting, and authorization context injection. |
 | `frontend-sheets` | Renders the pen-and-paper character sheet UI, displays the Player's multi-character roster, handles single-character selection at Group start, character naming, parental child-ownership agreements, and allowed player actions. |
-| `frontend-gm` | Game Master portal for managing groups, inviting/assigning players, verifying group-start character selections, inspecting all group player characters and NPC children, and configuring simulation clock parameters. |
+| `frontend-gm` | Game Master portal for managing groups, inviting/assigning players, verifying group-start character selections, inspecting all group player characters and NPC children, applying bounded role-play `weight_kg` adjustments, and configuring simulation clock and group parameters. |
 | `frontend-chat` | Renders the in-app chat interface (Global / World Chat with World Chat Server selector, Group Chat, and 1-to-1 Direct Messages) and manages authenticated WebSocket connections to `chat-service` and `chat-world-registry`. |
 | `portrait-renderer` | Generates and serves comic-style face portraits (SVG or rasterized PNG/WebP) from a character's phenotypic facial traits and age stage. |
 
 **UI/UX Design Principles:**
-- **Pen-and-Paper Character Sheet Aesthetic:** Structured layout inspired by classic tabletop RPG sheets—Header (Player-assigned Name, Character UUID, Lifecycle Status, Comic Face Portrait), Visible Appearance (`eye_color`, `hair_color`, `skin_color` reflecting current life-stage pigmentation), Core AD&D-Style Reproduction Attributes (`FER`, `CON`, `VIT`, `HOR`, `REC`, `COM` with scores and modifiers), Core Biological Stats, Genetic & Hereditary Summary, Reproductive Cycle/Status Indicators, and Lineage/Event History.
+- **Pen-and-Paper Character Sheet Aesthetic:** Structured layout inspired by classic tabletop RPG sheets—Header (Player-assigned Name, Character UUID, Lifecycle Status, Comic Face Portrait), Visible Appearance (`eye_color`, `hair_color`, `skin_color` reflecting current life-stage pigmentation), Physical & Medical Body Composition (`height_cm`, `weight_kg`, `BMI`, Body Fat Index/Percentage, Lean Body Mass, Skeletal Muscle Mass, Total Body Water, Bone Mass, Visceral Fat Rating, BMR, BSA, Ideal Weight Range), Core AD&D-Style Reproduction Attributes (`FER`, `CON`, `VIT`, `HOR`, `REC`, `COM` with scores and modifiers), Core Biological Stats, Genetic & Hereditary Summary, Reproductive Cycle/Status Indicators, and Lineage/Event History.
 - **Rendering Strategy:** Server-rendered HTML templates (Go `html/template` or `templ`) enhanced with lightweight progressive interactivity (e.g., HTMX) or a clean JSON API served by Gin—keeping the entire frontend stack Go-native and fast.
 
 ---
@@ -433,10 +467,10 @@ The `user-admin` microservice is the authoritative source of identity, group mem
 - **Multi-Factor Authentication (MFA):** Support for TOTP (RFC 6238) and optional WebAuthn/Passkeys, strongly recommended for Game Masters.
 - **Authorization Model (RBAC + Ownership/Group Scoping):**
   - `PLAYER`: Read/roster access to all characters where `character.owner_user_id == current_user.id`; within any Group `G`, active play access is restricted to the single Character selected by the Player at the start of Group `G` (`GROUP_MEMBERSHIP.selected_character_id`), which must be already owned by the Player and **must not** have been conceived/born in Group `G` (`character.origin_group_id != G`). Players of a child's biological mother and father may also initiate and confirm the child's `OWNERSHIP_AGREEMENT` while the child is an unowned NPC (`owner_user_id == null`).
-  - `GAME_MASTER`: Read/supervisory access to all active player characters and NPC children living in `managed_groups(current_user.id)`.
+  - `GAME_MASTER`: Read/supervisory access to all active player characters and NPC children living in `managed_groups(current_user.id)`, plus permission to adjust character `weight_kg` within the Group's configured biological/role-play parameters (`GROUP.simulation_config`).
   - Enforcement occurs at both `frontend-gateway` (coarse-grained) and backend services such as `sheet-aggregator` / `character-registry` (fine-grained defense in depth).
 - **Transport & Service Security:** TLS 1.3 externally; mTLS internally between Kubernetes pods.
-- **Audit Logging:** Immutable audit trail in PostgreSQL recording authentication events, role/group changes, and GM access to player character sheets.
+- **Audit Logging:** Immutable audit trail in PostgreSQL recording authentication events, role/group changes, GM access to player character sheets, and GM role-play `weight_kg` adjustments (capturing old/new values and rationale).
 
 ---
 
@@ -444,13 +478,13 @@ The `user-admin` microservice is the authoritative source of identity, group mem
 To maximize modularity, independent scaling, and scientific maintainability, **each attribute or derived value displayed on a character sheet is computed by a dedicated Go microservice**.
 
 #### Components
-1. **Character Registry (`character-registry`):** Owns the canonical character record (`UUID`, nullable `owner_user_id`, `origin_group_id`, player-assigned `name`, `gender`, `lifecycle_state`, `date_of_birth`, `date_of_death`, `mother_uuid`, `father_uuid`, and immutable diploid genome reference) and parental child-ownership agreements (`OWNERSHIP_AGREEMENT`) in PostgreSQL. Enforces that conceived/born children start as unowned NPCs, transitions ownership only upon mutual agreement between the mother's and father's Players, and prevents a child from being selected as a playable character in its `origin_group_id`.
+1. **Character Registry (`character-registry`):** Owns the canonical character record (`UUID`, nullable `owner_user_id`, `origin_group_id`, player-assigned `name`, `gender`, `lifecycle_state`, `date_of_birth`, `date_of_death`, `height_cm`, `weight_kg`, `mother_uuid`, `father_uuid`, and immutable diploid genome reference), parental child-ownership agreements (`OWNERSHIP_AGREEMENT`), and GM role-play weight adjustment history (`WEIGHT_ADJUSTMENT`) in PostgreSQL. Enforces that conceived/born children start as unowned NPCs, transitions ownership only upon mutual agreement between the mother's and father's Players, prevents a child from being selected as a playable character in its `origin_group_id`, and validates any GM `weight_kg` adjustment against the Group's configured biological/role-play parameter bounds before persisting and publishing `character.weight.updated`.
 2. **Character Sheet Aggregator (`sheet-aggregator`):**
    - Receives a sheet request for `character_uuid` (after verifying Player/GM authorization).
-   - Fetches canonical metadata (including `gender`, `date_of_birth`, `date_of_death`, `lifecycle_state`) from `character-registry` and executes a **concurrent parallel fan-out** (via Go `errgroup` + gRPC with strict per-call deadlines) to all applicable universal and **gender-specific** Attribute Microservices.
+   - Fetches canonical metadata (including `gender`, `date_of_birth`, `date_of_death`, `lifecycle_state`, `height_cm`, `weight_kg`) from `character-registry` and executes a **concurrent parallel fan-out** (via Go `errgroup` + gRPC with strict per-call deadlines) to all applicable universal and **gender-specific** Attribute Microservices.
    - Aggregates results into a unified `CharacterSheet` response.
    - Supports **graceful degradation**: if a non-critical attribute service is temporarily unavailable, the sheet still renders with a clearly marked `"unavailable"` field rather than failing the entire page.
-   - Caches short-lived attribute results keyed by `(character_uuid, sim_tick)` to avoid redundant recomputation when simulation time has not advanced.
+   - Caches short-lived attribute results keyed by `(character_uuid, sim_tick)` (invalidated immediately upon `character.weight.updated` events) to avoid redundant recomputation when simulation time has not advanced.
 3. **Standardized Attribute Microservice Contract:**
    Every `attr-*` microservice implements a shared gRPC interface defined in `pkg/proto/attribute/v1`:
    ```protobuf
@@ -458,10 +492,22 @@ To maximize modularity, independent scaling, and scientific maintainability, **e
      rpc Calculate(CalculateRequest) returns (CalculateResponse);
    }
    ```
-   - `CalculateRequest`: `character_uuid`, `sim_tick`, optional context snapshot (`gender`, `date_of_birth`, `date_of_death`, genome digest, lifecycle state).
+   - `CalculateRequest`: `character_uuid`, `sim_tick`, optional context snapshot (`gender`, `date_of_birth`, `date_of_death`, `height_cm`, `weight_kg`, genome digest, lifecycle state).
    - `CalculateResponse`: `attribute_key`, `display_name`, `value`, `unit`, `confidence_or_range`, `computed_at_tick`, `schema_version`, `service_version`.
    - Examples of Attribute Microservices:
      - `attr-biological-age` (chronological & developmental stage derived from `date_of_birth` and `date_of_death` / current `sim_tick`)
+     - `attr-height` (current `height_cm` derived from polygenic genotype, age, and developmental growth trajectory)
+     - `attr-weight` (current `weight_kg` reflecting developmental/gestational trajectory and any bounded GM role-play weight adjustments)
+     - `attr-bmi` (**Body Mass Index (`kg/m²`)** and WHO/age-adjusted classification band derived from `height_cm`, `weight_kg`, `gender`, and age)
+     - `attr-body-fat-index` (**Body Fat Percentage (`%`) & Body Fat Index** estimated from `height_cm`, `weight_kg`, `gender`, age, and genotype/hormonal modifiers)
+     - `attr-lean-body-mass` (**Lean Body Mass / Fat-Free Mass (`kg`)** derived from `height_cm`, `weight_kg`, `gender`, and body fat composition)
+     - `attr-muscle-mass` (**Skeletal Muscle Mass (`kg` & `%`)** estimated for the character's sex, age, and body composition)
+     - `attr-body-water` (**Total Body Water (`%` & `L`)** estimated hydration share and volume)
+     - `attr-bone-mass` (**Estimated Bone Mass (`kg`)** reflecting skeletal mineral mass across growth and aging)
+     - `attr-visceral-fat` (**Visceral Fat Rating (index)** estimating abdominal adipose level)
+     - `attr-bmr` (**Basal Metabolic Rate (`kcal/day`)** resting daily energy expenditure via Mifflin-St Jeor)
+     - `attr-body-surface-area` (**Body Surface Area (`m²`)** clinical BSA via Mosteller/Du Bois)
+     - `attr-ideal-weight` (**Ideal / Healthy Weight Range (`kg`)** reference band for current height, sex, and age)
      - `attr-eye-color` (current expressed eye color derived from genotype and age/developmental stage, accounting for post-birth and lifetime color changes)
      - `attr-hair-color` (current expressed hair color derived from genotype, age, and lifecycle state, accounting for post-birth darkening and age-related graying/whitening)
      - `attr-skin-color` (current expressed skin color derived from genotype, age, hormonal state, and environmental/seasonal modifiers)
@@ -502,7 +548,7 @@ The simulation engine decomposes human reproduction and life cycles into indepen
 | `sim-birth-date` | Calculates a character's **date of birth (`date_of_birth`)** from **either the mother's last menstruation date (LMP — Naegele's rule / gestational age model) or the exact date of conception** (gestation duration modulated by maternal `CON` and biological variance). Exposes synchronous gRPC calculation and emits `sim.birthdate.calculated` for `sim-gestation` and `character-registry`. | Local SQLite (gestational duration & LMP-to-delivery reference curves) |
 | `sim-gestation` | Tracks prenatal milestones from implantation through trimesters to birth, queries `sim-birth-date` to determine the scheduled `date_of_birth`, updates prenatal attributes, and emits `sim.character.born` upon delivery (triggering `sim-egg-reserve` and `sim-menarche` for newborn girls, and `sim-mortality` for all characters). | Local SQLite / Event-driven |
 | `sim-mortality` | Calculates the natural **date of death (`date_of_death`)** for each Character based on `date_of_birth`, gender, genetic predispositions, actuarial life tables, and biological health/vitality modifiers (`CON`, `VIT`)—strictly natural mortality in compliance with the zero-violence policy. Emits `sim.deathdate.calculated` for `sim-lifecycle`. | Local SQLite (actuarial & biological mortality life tables) |
-| `sim-lifecycle` | Advances character age (from `date_of_birth`), coordinates developmental milestones (such as puberty and menarche scheduled by `sim-menarche`), tracks health trajectories, and transitions characters to `DECEASED` upon reaching the `date_of_death` calculated by `sim-mortality`, emitting `sim.character.deceased`. | Local SQLite (developmental & aging reference tables) |
+| `sim-lifecycle` | Advances character age (from `date_of_birth`), updates natural developmental `height_cm` and baseline `weight_kg` trajectories (while respecting bounded GM role-play weight adjustments), coordinates developmental milestones (such as puberty and menarche scheduled by `sim-menarche`), tracks health trajectories, and transitions characters to `DECEASED` upon reaching the `date_of_death` calculated by `sim-mortality`, emitting `sim.character.deceased`. | Local SQLite (developmental, growth & aging reference tables) |
 
 #### End-to-End Reproduction, Birth & Lifecycle Initialization Flow
 
@@ -601,7 +647,7 @@ Hosted on **Azure Database for PostgreSQL (Flexible Server)** running **PostgreS
 - **Minimum Version Rationale (`PostgreSQL 18+`):** Generally Available across all Azure public regions with upstream security support through November 2030, providing native `uuidv7()` for PrincessPink's UUID-everywhere primary keys and cursor-paginated chat/audit/outbox tables, `RETURNING OLD/NEW` for atomic audit trails, SQL/JSON functions for `jsonb` (`simulation_config`), B-tree skip scans, Asynchronous I/O (`worker` mode on Azure), and hardened security (`SCRAM-SHA-256`, TLS 1.3, OAuth 2.0 / Microsoft Entra ID).
 - **Owned Domains:**
   - `user-admin`: Users, credentials (Argon2id hashes), MFA secrets, sessions/refresh tokens, groups, memberships (including each Player's single `selected_character_id` chosen at Group start), RBAC policies, and audit logs.
-  - `character-registry`: Character UUIDs, nullable player ownership (`owner_user_id`), `origin_group_id`, parental child-ownership agreements (`OWNERSHIP_AGREEMENT`), player-given names, `gender`, `date_of_birth`, `date_of_death`, `lifecycle_state`, gender-specific milestone history (such as `date_of_first_menstruation` and `menstruation_dates`), ovarian Egg-Reserve SQLite DB links (mapped to female `character_uuid`), mother/father lineage links, and immutable diploid genome records (or references).
+  - `character-registry`: Character UUIDs, nullable player ownership (`owner_user_id`), `origin_group_id`, parental child-ownership agreements (`OWNERSHIP_AGREEMENT`), player-given names, `gender`, `date_of_birth`, `date_of_death`, `height_cm`, `weight_kg`, GM role-play weight adjustment history (`WEIGHT_ADJUSTMENT`), `lifecycle_state`, gender-specific milestone history (such as `date_of_first_menstruation` and `menstruation_dates`), ovarian Egg-Reserve SQLite DB links (mapped to female `character_uuid`), mother/father lineage links, and immutable diploid genome records (or references).
   - `chat-service` & `chat-world-registry`: World Chat Server catalog, per-user server preferences, chat channels (`GLOBAL`, `GROUP`, `DIRECT`), message history, participant metadata, mute/block lists, and moderation audit logs (see [ADR-0002](architecture/ADR-0002-world-chat-microservices-and-server-selection.md)).
 - **Schema Isolation:** Logical separation via dedicated PostgreSQL schemas (e.g., `user_admin.*`, `character_registry.*`, `chat.*`) with per-service database credentials and least-privilege grants.
 
@@ -724,14 +770,15 @@ PrincessPink runs on **Azure Kubernetes Service (AKS)** with workload isolation 
 ## 10. Glossary
 
 - **Agent / Character:** An individual simulated human within PrincessPink. Every agent in the simulation is a character, similar to a character in a pen-and-paper RPG. Each character has a globally unique, permanent **UUID** that identifies it before birth (from conception), during life, and after death, along with core attributes (`gender`, `date_of_birth`, `date_of_death`) and gender-specific biological attributes. Characters may be owned by a Player (who can own multiple characters) or exist as an unowned **NPC** (such as a child conceived or born during a simulation before parental ownership is agreed).
-- **Character Sheet:** The gamified, tabletop-RPG-inspired view of a character's identity (name, UUID, gender, date of birth, date of death), comic face portrait, dynamic appearance traits (`eye_color`, `hair_color`, `skin_color`), 6 AD&D-style reproduction attributes, and universal plus gender-specific biological/genetic attributes. Each displayed attribute is calculated by a dedicated microservice.
+- **Body Composition & Medical Weight Metrics:** Clinical physical metrics calculated for every character from `height_cm`, `weight_kg`, `gender`, age, and lifecycle state—mirroring a medical body-composition scale—including **BMI (Body Mass Index)**, **Body Fat Index / Percentage**, **Lean Body Mass**, **Skeletal Muscle Mass**, **Total Body Water**, **Bone Mass**, **Visceral Fat Rating**, **Basal Metabolic Rate (BMR)**, **Body Surface Area (BSA)**, and **Ideal Weight Range**. Each metric is computed by a dedicated `attr-*` microservice and recalculates automatically whenever age, growth, gestation, or bounded Game Master role-play adjustments change `weight_kg`.
+- **Character Sheet:** The gamified, tabletop-RPG-inspired view of a character's identity (name, UUID, gender, date of birth, date of death), comic face portrait, dynamic appearance traits (`eye_color`, `hair_color`, `skin_color`), physical measurements (`height_cm`, `weight_kg`) and derived medical body-composition metrics (`BMI`, Body Fat Index, Lean Body Mass, BMR, etc.), 6 AD&D-style reproduction attributes, and universal plus gender-specific biological/genetic attributes. Each displayed attribute is calculated by a dedicated microservice.
 - **Chat Channels (Global / World, Group, Direct Message):** Real-time communication channels powered by `chat-service`, `chat-world-registry`, and `frontend-chat`: **Global / World Chat** (World of Warcraft-style community channels partitioned into player-selectable **World Chat Servers**), **Group Chat** (private channel for a Game Master and his/her Group), and **Direct Message Chat** (private 1-to-1 messaging between Players).
 - **Conception:** The biological fertilization event in which a surface-compatible winning sperm cell (confirmed by `sim-gamete-surface`, with its haploid DNA) fuses with a viable egg cell (selected from the mother's Egg-Reserve SQLite database by `sim-egg-selection`, with its haploid DNA), triggering allocation of a new Character UUID and diploid DNA calculation.
 - **DNA (Genome):** The immutable diploid genetic blueprint (23 chromosome pairs) calculated for each newly conceived character by combining the haploid DNA of the mother's egg cell and the haploid DNA of the father's winning sperm cell.
 - **Egg Cell (Oocyte):** A female gamete generated at birth by `sim-egg-reserve` and stored inside the female character's UUID-linked **Egg-Reserve SQLite database**, carrying its own **haploid DNA** (22 autosomes + `X`) calculated via meiosis from her diploid DNA, along with a **surface receptor profile** checked during fertilization. During each post-menarche cycle, `sim-egg-selection` determines which egg cell drops for ovulation.
 - **Egg-Reserve Database:** A dedicated **SQLite database** created at birth by `sim-egg-reserve` and explicitly linked to a female character's `UUID`, storing all simulated egg cells she carries with her at birth and queried each cycle by `sim-egg-selection` to determine which egg cell drops during her next cycle.
 - **Ejaculation Database:** A dedicated, event-scoped **SQLite database** built by `sim-ejaculation` for a male character's ejaculation event, storing all simulated sperm cells in that ejaculation along with their individual haploid DNA (derived from the father's DNA), surface ligand profile, and motility/viability attributes.
-- **Game Master (GM):** A user role responsible for managing a simulation Group (campaign). Game Masters can view all character sheets of players within their group(s), control group-level simulation settings, and participate in and moderate their Group Chat.
+- **Game Master (GM):** A user role responsible for managing a simulation Group (campaign). Game Masters can view all character sheets of players and NPCs within their group(s), control group-level simulation settings, adjust character `weight_kg` within configured biological/role-play parameters (with full audit logging), and participate in and moderate their Group Chat.
 - **Group:** A logical simulation world or campaign managed by a Game Master, grouping Players and their Characters together under a shared simulation clock and dedicated Group Chat. Within a Group, each Player plays **only one Character**, selected at the start of the Group from the Characters they already own; children conceived or born in the Group live there as NPCs and can only be played in a future Group.
 - **Menarche (Date of First Menstruation):** A female-specific biological milestone calculated for a young female character by `sim-menarche`, recording the simulated calendar date of her first menstruation, followed by ongoing recorded `menstruation_dates`.
 - **NPC (Non-Player Character) & Child Ownership Agreement:** Children conceived or born during a simulation start as unowned **NPCs** (`owner_user_id = null`) until the Players of the mother and the father reach a mutual **Ownership Agreement** deciding who takes ownership of the child. Even after ownership is assigned, the child remains an NPC in the Group where its mother and father live and can only be selected as a playable character in a **future Group**.
