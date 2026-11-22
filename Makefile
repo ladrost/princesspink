@@ -11,6 +11,7 @@ SHELL        := /usr/bin/env bash
 GO            ?= go
 GOFMT         ?= gofmt
 GOLANGCI_LINT ?= golangci-lint
+QODANA        ?= qodana
 GOVULNCHECK   ?= govulncheck
 BUF           ?= buf
 DOCKER        ?= docker
@@ -272,6 +273,21 @@ lint: ## Run golangci-lint across all modules (or SERVICE=<name>)
 		echo "==> [lint] $$mod"; \
 		(cd "$$mod" && $(GOLANGCI_LINT) run ./...); \
 	done
+
+.PHONY: qodana
+qodana: ## Run JetBrains Qodana Go static analysis linter (uses qodana.yaml)
+	@command -v $(QODANA) >/dev/null 2>&1 || { echo "Error: $(QODANA) CLI is not installed (see https://www.jetbrains.com/help/qodana/qodana-cli.html)." >&2; exit 1; }
+	@if [ -z "$(TARGET_MODULES)" ]; then \
+		echo "No Go modules found under pkg/ or services/."; \
+		exit 0; \
+	fi
+	@if [ -n "$(SERVICE)" ]; then \
+		echo "==> [qodana] services/$(SERVICE)"; \
+		$(QODANA) scan --only-directory "services/$(SERVICE)" --fail-threshold 0; \
+	else \
+		echo "==> [qodana] workspace"; \
+		$(QODANA) scan --fail-threshold 0; \
+	fi
 
 .PHONY: vuln
 vuln: ## Run govulncheck vulnerability scan across all modules
