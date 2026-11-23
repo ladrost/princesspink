@@ -1,3 +1,3 @@
 go 1.27
 
-use (.)
+toolchain go1.27.4
