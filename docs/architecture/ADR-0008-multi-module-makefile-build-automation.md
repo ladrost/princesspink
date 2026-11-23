@@ -9,7 +9,7 @@
 
 ## Context
 
-PrincessPink is organized as a **Go 1.27+ multi-module workspace (`go.work`)** containing shared libraries under `pkg/` and 25+ independently versioned microservices under `services/` (Concept §3.3 & §3.5). Developers and CI pipelines need a single, discoverable, reproducible interface to:
+PrincessPink is organized as a **Go 1.27+ multi-module workspace (`go.work`, `toolchain go1.27.4`)** containing shared libraries under `pkg/` and 25+ independently versioned microservices under `services/` (Concept §3.3 & §3.5). Developers and CI pipelines need a single, discoverable, reproducible interface to:
 
 1. Manage Go workspace modules (`go work use`, `go work sync`, `go mod tidy`, `go mod verify`) across `pkg/` and `services/`.
 2. Build static Linux binaries (`CGO_ENABLED=0`) with per-service semantic versions read from `services/<service>/VERSION` and injected via `-ldflags`.
@@ -63,7 +63,7 @@ GitHub Actions workflows ([ADR-0009](ADR-0009-github-actions-ci-cd.md)) invoke t
 ## Rationale & Alignment with PrincessPink Requirements
 
 1. **Zero-Friction Contributor Onboarding (Concept §7.3 & README):**
-   Contributors only need Go 1.27+, Git, and GNU `make` to discover every workflow command via `make help` and validate changes with `make check`.
+   Contributors only need Go 1.27+ (`toolchain go1.27.4`), Git, and GNU `make` to discover every workflow command via `make help` and validate changes with `make check`.
 2. **Independent Microservice Versioning Enforcement (Concept §3.5):**
    Reading `services/<svc>/VERSION` centrally in `build`, `versions`, `tag`, `docker-build`, `docker-buildx`, `docker-push`, and `docker-scan` guarantees consistent semantic version propagation from binary `-ldflags` to Git tags and ACR container tags.
 3. **Hardened Static Container Builds (Concept §6.3):**

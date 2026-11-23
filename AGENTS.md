@@ -53,7 +53,7 @@ Respect these domain rules across all services and tests:
 
 ## 4. Repository Layout & Multi-Module Workspace
 
-- **Workspace:** Go **1.27+** multi-module workspace defined in root `go.work`. Register every new module under `pkg/<module>` or `services/<service>` with `make work-use` and `make work-sync`.
+- **Workspace:** Go **1.27+** multi-module workspace defined in root `go.work` (`toolchain go1.27.4`; no root module). Register every new module under `pkg/<module>` or `services/<service>` with `make work-use` and `make work-sync`.
 - **Shared Packages (`pkg/`):** Reusable platform libraries (`pkg/logging`, `pkg/telemetry`, `pkg/proto`, `pkg/config`, `pkg/uuid`). Keep them small, well-tested, and free of service-specific business logic.
 - **Microservices (`services/<service-name>/`):** Independently buildable, deployable, and semantically versioned services:
   - Must contain `go.mod`, a `VERSION` file (SemVer, e.g. `0.1.0`), `cmd/<service-name>/main.go` (or `cmd/server/main.go`), and `internal/` packages for private domain/adapter code.

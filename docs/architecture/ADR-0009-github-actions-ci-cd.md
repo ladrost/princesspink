@@ -9,7 +9,7 @@
 
 ## Context
 
-PrincessPink is hosted on GitHub (`ladrost/princesspink`), structured as a Go 1.27+ multi-module workspace (`go.work`) with shared `pkg/` libraries and 25+ independently versioned microservices under `services/`, targeting **Azure Container Registry (ACR)** and **Azure Kubernetes Service (AKS)** (Concept §3.5, §6.2 & §7.3).
+PrincessPink is hosted on GitHub (`ladrost/princesspink`), structured as a Go 1.27+ multi-module workspace (`go.work`, `toolchain go1.27.4`) with shared `pkg/` libraries and 25+ independently versioned microservices under `services/`, targeting **Azure Container Registry (ACR)** and **Azure Kubernetes Service (AKS)** (Concept §3.5, §6.2 & §7.3).
 
 A naive monorepo CI pipeline that rebuilds, retests, and redeploys every microservice on every commit does not scale to 25+ services and contradicts PrincessPink's independent per-service semantic versioning (`<service>/v<MAJOR.MINOR.PATCH>`). Conversely, overly fragmented pipelines risk skipping cross-cutting checks when shared `pkg/` libraries or Protobuf contracts change.
 
@@ -94,5 +94,5 @@ flowchart LR
 
 ### Trade-offs & Operational Notes
 - **Scoped Tag Discipline:** Releasing a microservice requires updating `services/<service>/VERSION` and pushing the matching `<service>/v<VERSION>` tag (`make tag SERVICE=<svc>`); CI fails fast if the tag and `VERSION` file diverge.
-- **GitHub Actions Minute & Cache Management:** Caching the Go build/module cache (`actions/setup-go`) and `golangci-lint` cache per module is essential to keep full-workspace runs triggered by `pkg/` edits fast.
+- **GitHub Actions Minute & Cache Management:** Caching the Go build/module cache (`actions/setup-go` using `go-version-file: go.work`) and `golangci-lint` cache per module is essential to keep full-workspace runs triggered by `pkg/` edits fast.
 - **Phased Activation:** During Phase 0 (before `pkg/` and `services/` modules exist), `Makefile` targets exit cleanly when no Go modules are present, allowing `ci.yml` to be enabled incrementally in Phase 1 as the first `pkg/` modules and `user-admin` are committed.

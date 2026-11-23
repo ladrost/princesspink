@@ -1,7 +1,7 @@
 # PrincessPink
 
 [![License: BSD-3-Clause](https://img.shields.io/badge/License-BSD_3--Clause-blue.svg)](LICENSE)
-[![Go Version](https://img.shields.io/badge/Go-1.27+-00ADD8?logo=go&logoColor=white)](go.work)
+[![Go Version](https://img.shields.io/badge/Go-1.27.4+-00ADD8?logo=go&logoColor=white)](go.work)
 [![Status](https://img.shields.io/badge/Status-Concept%20%26%20Architecture-informational)](docs/Concept.md)
 [![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.0-4baaaa.svg)](CODE_OF_CONDUCT.md)
 
@@ -57,7 +57,7 @@ PrincessPink enforces a strict, non-negotiable **zero-violence, zero-nudity** po
 
 | Layer | Technology / Approach |
 | :--- | :--- |
-| **Language & Workspace** | Go 1.27+ (`go.work` multi-module workspace, independent semantic versioning per service) |
+| **Language & Workspace** | Go 1.27+ (`go.work` multi-module workspace, `toolchain go1.27.4`, independent semantic versioning per service) |
 | **Frontend Microservices** | Go + **Gin** HTTP framework (`frontend-gateway`, `frontend-sheets`, `frontend-gm`, `frontend-chat`, `portrait-renderer`) with server-rendered HTML/HTMX and authenticated WebSockets (`wss://`) |
 | **Internal Communication** | **gRPC / Protocol Buffers** (`pkg/proto`, [ADR-0005](docs/architecture/ADR-0005-shared-grpc-protobuf-contracts.md)) for synchronous RPC & parallel attribute fan-out; **NATS JetStream** (or Azure Service Bus) for simulation ticks, lifecycle events, and chat pub/sub |
 | **User Administration & Security** | `user-admin` backed by **PostgreSQL 18+** with `Argon2id` password hashing, MFA (TOTP / WebAuthn), RBAC (`PLAYER` / `GAME_MASTER`), TLS 1.3 / mTLS, and immutable audit logging ([ADR-0010](docs/architecture/ADR-0010-user-admin-auth-rbac-and-group-management.md)) |
@@ -97,7 +97,7 @@ princesspink/
 
 ### Prerequisites
 
-- [Go](https://go.dev/) 1.27+
+- [Go](https://go.dev/) 1.27+ (`toolchain go1.27.4` in `go.work`)
 - [Git](https://git-scm.com/)
 - GNU `make`
 - *(Optional / for upcoming service builds and local stacks)* [Docker](https://www.docker.com/) (with Compose), [PostgreSQL](https://www.postgresql.org/) 18+ (see [ADR-0001](docs/architecture/ADR-0001-minimum-postgresql-version.md)), `kubectl`, and [Trivy](https://trivy.dev/)
