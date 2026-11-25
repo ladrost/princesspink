@@ -24,7 +24,7 @@ COVERAGE_DIR  ?= .coverage
 CGO_ENABLED   ?= 0
 GOOS          ?= $(shell $(GO) env GOOS 2>/dev/null || uname -s | tr '[:upper:]' '[:lower:]')
 GOARCH        ?= $(shell $(GO) env GOARCH 2>/dev/null || echo amd64)
-VERSION_PKG   ?= main
+VERSION_LIBS   ?= main
 
 # Container / Azure Container Registry (ACR) settings
 REGISTRY      ?= princesspink.azurecr.io
@@ -37,9 +37,9 @@ BUILD_DATE    := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 # ------------------------------------------------------------------------------
 # Workspace & Service Discovery
 # ------------------------------------------------------------------------------
-PKG_MODULES     := $(sort $(patsubst %/go.mod,%,$(shell find pkg -name go.mod 2>/dev/null)))
+LIBS_MODULES     := $(sort $(patsubst %/go.mod,%,$(shell find libs -name go.mod 2>/dev/null)))
 SERVICE_MODULES := $(sort $(patsubst %/go.mod,%,$(shell find services -mindepth 2 -maxdepth 2 -name go.mod 2>/dev/null)))
-ALL_MODULES     := $(PKG_MODULES) $(SERVICE_MODULES)
+ALL_MODULES     := $(LIBS_MODULES) $(SERVICE_MODULES)
 SERVICES        := $(patsubst services/%,%,$(SERVICE_MODULES))
 
 # Optional single-service scope: e.g. `make test SERVICE=sim-gamete-surface`
@@ -74,9 +74,9 @@ help: ## Display this help message
 ##@ Workspace & Dependencies
 
 .PHONY: work-use
-work-use: ## Register all pkg/ and services/ modules in go.work
+work-use: ## Register all libs/ and services/ modules in go.work
 	@if [ -z "$(ALL_MODULES)" ]; then \
-		echo "No Go modules found under pkg/ or services/."; \
+		echo "No Go modules found under libs/ or services/."; \
 		exit 0; \
 	fi
 	$(GO) work use $(ALL_MODULES)
@@ -88,7 +88,7 @@ work-sync: ## Synchronize workspace build list with go.work
 .PHONY: deps
 deps: ## Download and verify Go module dependencies
 	@if [ -z "$(TARGET_MODULES)" ]; then \
-		echo "No Go modules found under pkg/ or services/."; \
+		echo "No Go modules found under libs/ or services/."; \
 		exit 0; \
 	fi
 	@for mod in $(TARGET_MODULES); do \
@@ -99,7 +99,7 @@ deps: ## Download and verify Go module dependencies
 .PHONY: tidy
 tidy: ## Run 'go mod tidy' across all modules (or SERVICE=<name>)
 	@if [ -z "$(TARGET_MODULES)" ]; then \
-		echo "No Go modules found under pkg/ or services/."; \
+		echo "No Go modules found under libs/ or services/."; \
 		exit 0; \
 	fi
 	@for mod in $(TARGET_MODULES); do \
@@ -137,7 +137,7 @@ build: ## Build all microservices (or SERVICE=<name>) into bin/ with embedded se
 		else \
 			entry="."; \
 		fi; \
-		ldflags="-s -w -X '$(VERSION_PKG).Version=$$ver' -X '$(VERSION_PKG).Commit=$(GIT_COMMIT)' -X '$(VERSION_PKG).BuildDate=$(BUILD_DATE)'"; \
+		ldflags="-s -w -X '$(VERSION_LIBS).Version=$$ver' -X '$(VERSION_LIBS).Commit=$(GIT_COMMIT)' -X '$(VERSION_LIBS).BuildDate=$(BUILD_DATE)'"; \
 		echo "==> [build] $$svc (v$$ver, $(GOOS)/$(GOARCH), entry=$$entry)"; \
 		(cd "$$dir" && CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build -trimpath -ldflags "$$ldflags" -o "$(CURDIR)/$(BIN_DIR)/$$svc" "$$entry"); \
 	done
@@ -154,7 +154,7 @@ build-linux: ## Cross-compile static Linux amd64 binaries for container images
 .PHONY: test
 test: ## Run unit tests across all modules (or SERVICE=<name>)
 	@if [ -z "$(TARGET_MODULES)" ]; then \
-		echo "No Go modules found under pkg/ or services/."; \
+		echo "No Go modules found under libs/ or services/."; \
 		exit 0; \
 	fi
 	@for mod in $(TARGET_MODULES); do \
@@ -165,7 +165,7 @@ test: ## Run unit tests across all modules (or SERVICE=<name>)
 .PHONY: test-race
 test-race: ## Run tests with race detector enabled (-race -count=1)
 	@if [ -z "$(TARGET_MODULES)" ]; then \
-		echo "No Go modules found under pkg/ or services/."; \
+		echo "No Go modules found under libs/ or services/."; \
 		exit 0; \
 	fi
 	@for mod in $(TARGET_MODULES); do \
@@ -176,7 +176,7 @@ test-race: ## Run tests with race detector enabled (-race -count=1)
 .PHONY: test-cover
 test-cover: ## Run tests with coverage profiles and HTML reports in .coverage/
 	@if [ -z "$(TARGET_MODULES)" ]; then \
-		echo "No Go modules found under pkg/ or services/."; \
+		echo "No Go modules found under libs/ or services/."; \
 		exit 0; \
 	fi
 	@mkdir -p "$(COVERAGE_DIR)"
@@ -193,7 +193,7 @@ test-cover: ## Run tests with coverage profiles and HTML reports in .coverage/
 .PHONY: test-sim
 test-sim: ## Run deterministic fixed-seed simulation cohort tests (-tags=simulation)
 	@if [ -z "$(TARGET_MODULES)" ]; then \
-		echo "No Go modules found under pkg/ or services/."; \
+		echo "No Go modules found under libs/ or services/."; \
 		exit 0; \
 	fi
 	@for mod in $(TARGET_MODULES); do \
@@ -204,7 +204,7 @@ test-sim: ## Run deterministic fixed-seed simulation cohort tests (-tags=simulat
 .PHONY: test-integration
 test-integration: ## Run containerized integration tests (-tags=integration)
 	@if [ -z "$(TARGET_MODULES)" ]; then \
-		echo "No Go modules found under pkg/ or services/."; \
+		echo "No Go modules found under libs/ or services/."; \
 		exit 0; \
 	fi
 	@for mod in $(TARGET_MODULES); do \
@@ -215,7 +215,7 @@ test-integration: ## Run containerized integration tests (-tags=integration)
 .PHONY: bench
 bench: ## Run Go benchmarks across all modules (or SERVICE=<name>)
 	@if [ -z "$(TARGET_MODULES)" ]; then \
-		echo "No Go modules found under pkg/ or services/."; \
+		echo "No Go modules found under libs/ or services/."; \
 		exit 0; \
 	fi
 	@for mod in $(TARGET_MODULES); do \
@@ -230,18 +230,18 @@ bench: ## Run Go benchmarks across all modules (or SERVICE=<name>)
 
 .PHONY: fmt
 fmt: ## Format all Go source files with gofmt -s -w
-	@files="$$(find pkg services -name '*.go' 2>/dev/null || true)"; \
+	@files="$$(find libs services -name '*.go' 2>/dev/null || true)"; \
 	if [ -z "$$files" ]; then \
-		echo "No Go source files found under pkg/ or services/."; \
+		echo "No Go source files found under libs/ or services/."; \
 		exit 0; \
 	fi; \
 	$(GOFMT) -s -w $$files
 
 .PHONY: fmt-check
 fmt-check: ## Verify all Go source files are properly formatted (CI check)
-	@files="$$(find pkg services -name '*.go' 2>/dev/null || true)"; \
+	@files="$$(find libs services -name '*.go' 2>/dev/null || true)"; \
 	if [ -z "$$files" ]; then \
-		echo "No Go source files found under pkg/ or services/."; \
+		echo "No Go source files found under libs/ or services/."; \
 		exit 0; \
 	fi; \
 	unformatted="$$($(GOFMT) -s -l $$files)"; \
@@ -254,7 +254,7 @@ fmt-check: ## Verify all Go source files are properly formatted (CI check)
 .PHONY: vet
 vet: ## Run 'go vet' across all modules (or SERVICE=<name>)
 	@if [ -z "$(TARGET_MODULES)" ]; then \
-		echo "No Go modules found under pkg/ or services/."; \
+		echo "No Go modules found under libs/ or services/."; \
 		exit 0; \
 	fi
 	@for mod in $(TARGET_MODULES); do \
@@ -266,7 +266,7 @@ vet: ## Run 'go vet' across all modules (or SERVICE=<name>)
 lint: ## Run golangci-lint across all modules (or SERVICE=<name>)
 	@command -v $(GOLANGCI_LINT) >/dev/null 2>&1 || { echo "Error: $(GOLANGCI_LINT) is not installed (run 'make tools')." >&2; exit 1; }
 	@if [ -z "$(TARGET_MODULES)" ]; then \
-		echo "No Go modules found under pkg/ or services/."; \
+		echo "No Go modules found under libs/ or services/."; \
 		exit 0; \
 	fi
 	@for mod in $(TARGET_MODULES); do \
@@ -278,7 +278,7 @@ lint: ## Run golangci-lint across all modules (or SERVICE=<name>)
 qodana: ## Run JetBrains Qodana Go static analysis linter (uses qodana.yaml)
 	@command -v $(QODANA) >/dev/null 2>&1 || { echo "Error: $(QODANA) CLI is not installed (see https://www.jetbrains.com/help/qodana/qodana-cli.html)." >&2; exit 1; }
 	@if [ -z "$(TARGET_MODULES)" ]; then \
-		echo "No Go modules found under pkg/ or services/."; \
+		echo "No Go modules found under libs/ or services/."; \
 		exit 0; \
 	fi
 	@if [ -n "$(SERVICE)" ]; then \
@@ -293,7 +293,7 @@ qodana: ## Run JetBrains Qodana Go static analysis linter (uses qodana.yaml)
 vuln: ## Run govulncheck vulnerability scan across all modules
 	@command -v $(GOVULNCHECK) >/dev/null 2>&1 || { echo "Error: $(GOVULNCHECK) is not installed (run 'make tools')." >&2; exit 1; }
 	@if [ -z "$(TARGET_MODULES)" ]; then \
-		echo "No Go modules found under pkg/ or services/."; \
+		echo "No Go modules found under libs/ or services/."; \
 		exit 0; \
 	fi
 	@for mod in $(TARGET_MODULES); do \
@@ -312,7 +312,7 @@ check: fmt-check vet lint test-race vuln ## Run full CI quality gate (fmt-check,
 .PHONY: generate
 generate: ## Run 'go generate ./...' across all modules
 	@if [ -z "$(TARGET_MODULES)" ]; then \
-		echo "No Go modules found under pkg/ or services/."; \
+		echo "No Go modules found under libs/ or services/."; \
 		exit 0; \
 	fi
 	@for mod in $(TARGET_MODULES); do \

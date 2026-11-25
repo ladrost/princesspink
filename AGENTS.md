@@ -7,16 +7,16 @@ This file provides authoritative instructions for AI coding agents and contribut
 ## 1. Project Overview & Current Phase
 
 - **What PrincessPink Is:** An open-source, scientific, population-level simulation of human reproduction and generational lineage presented through a pen-and-paper RPG interface.
-- **Current Stage:** Phase 0 (Architectural Foundation). Shared libraries under `pkg/` and microservices under `services/` are being built incrementally according to the phased roadmap in `docs/Concept.md`.
+- **Current Stage:** Phase 0 (Architectural Foundation). Shared libraries under `libs/` and microservices under `services/` are being built incrementally according to the phased roadmap in `docs/Concept.md`.
 - **Authoritative Documentation:**
   - [`docs/Concept.md`](docs/Concept.md) — Domain model, lifecycle, genetics/simulation rules, service catalog, storage, and AKS deployment architecture.
   - [`docs/architecture/ADR-0001`](docs/architecture/ADR-0001-minimum-postgresql-version.md) — Minimum PostgreSQL 18+ baseline.
   - [`docs/architecture/ADR-0002`](docs/architecture/ADR-0002-world-chat-microservices-and-server-selection.md) — World Chat microservices & server selection.
-  - [`docs/architecture/ADR-0003`](docs/architecture/ADR-0003-shared-logging-library.md) — Shared structured logging (`pkg/logging`).
-  - [`docs/architecture/ADR-0004`](docs/architecture/ADR-0004-shared-opentelemetry-observability.md) — Shared OpenTelemetry observability (`pkg/telemetry`).
-  - [`docs/architecture/ADR-0005`](docs/architecture/ADR-0005-shared-grpc-protobuf-contracts.md) — Shared gRPC & Protobuf contracts (`pkg/proto`).
-  - [`docs/architecture/ADR-0006`](docs/architecture/ADR-0006-shared-configuration-library.md) — Shared configuration (`pkg/config`).
-  - [`docs/architecture/ADR-0007`](docs/architecture/ADR-0007-shared-uuid-utilities.md) — Shared UUIDv7 utilities (`pkg/uuid`).
+  - [`docs/architecture/ADR-0003`](docs/architecture/ADR-0003-shared-logging-library.md) — Shared structured logging (`libs/logging`).
+  - [`docs/architecture/ADR-0004`](docs/architecture/ADR-0004-shared-opentelemetry-observability.md) — Shared OpenTelemetry observability (`libs/telemetry`).
+  - [`docs/architecture/ADR-0005`](docs/architecture/ADR-0005-shared-grpc-protobuf-contracts.md) — Shared gRPC & Protobuf contracts (`libs/proto`).
+  - [`docs/architecture/ADR-0006`](docs/architecture/ADR-0006-shared-configuration-library.md) — Shared configuration (`libs/config`).
+  - [`docs/architecture/ADR-0007`](docs/architecture/ADR-0007-shared-uuid-utilities.md) — Shared UUIDv7 utilities (`libs/uuid`).
   - [`docs/architecture/ADR-0008`](docs/architecture/ADR-0008-multi-module-makefile-build-automation.md) — Multi-module `Makefile` build automation.
   - [`docs/architecture/ADR-0009`](docs/architecture/ADR-0009-github-actions-ci-cd.md) — GitHub Actions CI/CD architecture.
   - [`docs/architecture/ADR-0010`](docs/architecture/ADR-0010-user-admin-auth-rbac-and-group-management.md) — `user-admin` auth, RBAC & group management.
@@ -53,15 +53,15 @@ Respect these domain rules across all services and tests:
 
 ## 4. Repository Layout & Multi-Module Workspace
 
-- **Workspace:** Go **1.27+** multi-module workspace defined in root `go.work` (`toolchain go1.27.4`; no root module). Register every new module under `pkg/<module>` or `services/<service>` with `make work-use` and `make work-sync`.
-- **Shared Packages (`pkg/`):** Reusable platform libraries (`pkg/logging`, `pkg/telemetry`, `pkg/proto`, `pkg/config`, `pkg/uuid`). Keep them small, well-tested, and free of service-specific business logic.
+- **Workspace:** Go **1.27+** multi-module workspace defined in root `go.work` (`toolchain go1.27.4`; no root module). Register every new module under `libs/<module>` or `services/<service>` with `make work-use` and `make work-sync`.
+- **Shared Packages (`libs/`):** Reusable platform libraries (`libs/logging`, `libs/telemetry`, `libs/proto`, `libs/config`, `libs/uuid`). Keep them small, well-tested, and free of service-specific business logic.
 - **Microservices (`services/<service-name>/`):** Independently buildable, deployable, and semantically versioned services:
   - Must contain `go.mod`, a `VERSION` file (SemVer, e.g. `0.1.0`), `cmd/<service-name>/main.go` (or `cmd/server/main.go`), and `internal/` packages for private domain/adapter code.
   - Release tags follow `<service-name>/v<VERSION>`.
   - Embed `Version`, `Commit`, and `BuildDate` via `-ldflags` (handled automatically by `make build`).
 - **Communication Boundaries:**
   - Browser-facing edge (`frontend-*`): Go + **Gin** HTTP/HTMX and authenticated TLS WebSockets (`wss://`).
-  - Internal synchronous RPC: **gRPC / Protocol Buffers** (`pkg/proto`).
+  - Internal synchronous RPC: **gRPC / Protocol Buffers** (`libs/proto`).
   - Internal asynchronous events & chat fan-out: **NATS JetStream** (with transactional outbox for PostgreSQL writes and idempotent consumers for at-least-once delivery).
 
 ---
@@ -74,7 +74,7 @@ Respect these domain rules across all services and tests:
 - Format all Go code with `gofmt -s` (`make fmt`). Keep imports grouped cleanly (standard library, third-party, internal/workspace packages).
 - Keep packages cohesive and avoid package-level mutable globals; pass dependencies explicitly via constructors (`New...`).
 - Define small, focused interfaces **at the consumer side**, not preemptively in the implementation package.
-- Keep `internal/` packages unexported to other modules; expose only intentional APIs under `pkg/`.
+- Keep `internal/` packages unexported to other modules; expose only intentional APIs under `libs/`.
 - Prefer simple, readable control flow with early returns over deep nesting. Avoid unnecessary reflection or premature abstraction.
 - Always document exported types, functions, methods, and constants with clear Go doc comments starting with the symbol name.
 
@@ -96,25 +96,25 @@ Respect these domain rules across all services and tests:
 
 ### 5.4 Mandatory Shared Platform Libraries (ADRs)
 
-- **Logging (`pkg/logging`, ADR-0003):**
-  - Use stdlib `log/slog` via `pkg/logging` only (do **not** introduce Zap or Zerolog).
+- **Logging (`libs/logging`, ADR-0003):**
+  - Use stdlib `log/slog` via `libs/logging` only (do **not** introduce Zap or Zerolog).
   - Always use context-aware methods (`InfoContext`, `WarnContext`, `ErrorContext`) so `trace_id`, `span_id`, `correlation_id`, `user_uuid`, `group_id`, and `character_uuid` are automatically attached.
   - Output JSON to stdout by default; never log PII (emails, passwords, MFA secrets, raw JWTs, DSNs, or raw chat message bodies). Log non-PII `user_uuid`.
-- **Observability (`pkg/telemetry`, ADR-0004):**
+- **Observability (`libs/telemetry`, ADR-0004):**
   - Initialize OpenTelemetry once in `main()` via `telemetry.Init(ctx, cfg)` and invoke bounded-timeout `Shutdown(ctx)` on `SIGTERM`/`SIGINT`.
   - Propagate W3C Trace Context and Baggage across Gin (`otelgin`), gRPC (`otelgrpc`), and NATS JetStream headers.
   - Follow metric naming `princesspink_<domain>_<metric>_<unit>`. **Never** use unbounded identifiers (`character_uuid`, `user_uuid`, `group_id`, `ejaculation_id`) as Prometheus labels.
   - Expose `/healthz`, `/readyz`, and internal-only `/metrics` (never exposed through public ingress).
-- **gRPC & Protobuf (`pkg/proto`, ADR-0005):**
-  - Define all internal RPC and NATS event schemas under `pkg/proto/` governed by `buf` (`make proto-lint`, `make proto-breaking`, `make proto-gen`).
-  - Commit generated Go code under `pkg/proto/gen/go/` so standard `go build`/`go test` work without `buf`/`protoc`.
+- **gRPC & Protobuf (`libs/proto`, ADR-0005):**
+  - Define all internal RPC and NATS event schemas under `libs/proto/` governed by `buf` (`make proto-lint`, `make proto-breaking`, `make proto-gen`).
+  - Commit generated Go code under `libs/proto/gen/go/` so standard `go build`/`go test` work without `buf`/`protoc`.
   - Evolve `v1` contracts additively only; reserve removed field names/numbers; introduce `v2` for breaking changes.
-  - Use `pkg/proto/grpcutil` server/client factories and register `grpc.health.v1.Health` on every gRPC server.
-- **Configuration (`pkg/config`, ADR-0006):**
+  - Use `libs/proto/grpcutil` server/client factories and register `grpc.health.v1.Health` on every gRPC server.
+- **Configuration (`libs/config`, ADR-0006):**
   - Load operational settings via typed `config.Load[T](ctx)` with fail-fast validation before opening listeners. Do **not** use Viper or scattered `os.Getenv` calls, and do **not** silently load `.env` files in containers.
   - Support `*_FILE` secret indirection (Azure Key Vault CSI / Docker secrets) and wrap sensitive fields in `config.Secret` so `String()`, `MarshalJSON()`, and `LogValue()` always emit `[REDACTED]`.
-- **UUIDs (`pkg/uuid`, ADR-0007):**
-  - Generate all domain, event, outbox, and correlation IDs as RFC 9562 **UUIDv7** via `pkg/uuid` (do **not** call `github.com/google/uuid` directly or use UUIDv4).
+- **UUIDs (`libs/uuid`, ADR-0007):**
+  - Generate all domain, event, outbox, and correlation IDs as RFC 9562 **UUIDv7** via `libs/uuid` (do **not** call `github.com/google/uuid` directly or use UUIDv4).
   - Validate and reject nil/malformed UUIDs at all API/event boundaries.
   - Construct SQLite artifact filenames strictly from validated canonical lowercase UUIDs (`egg_reserve_<uuid>.sqlite`, `ejaculation_<uuid>.sqlite`) to prevent path traversal.
   - **Never** use UUIDs as security secrets (sessions, refresh/reset/CSRF tokens); use `crypto/rand` tokens of at least 256 bits.
@@ -149,7 +149,7 @@ Always use the root `Makefile` (ADR-0008) to build, lint, scan, and test so loca
 4. **JetBrains Qodana (`jetbrains/qodana-go`)** (`make qodana`) — **Additional static analysis linter** configured in root [`qodana.yaml`](qodana.yaml) using the `qodana.recommended` Go inspection profile:
    - Run locally via `make qodana` (or `qodana scan --fail-threshold 0`) when the Qodana CLI is installed, or via JetBrains GoLand (`Tools | Qodana`).
    - Complements `golangci-lint` with deep cross-file GoLand/IDE dataflow, nil-dereference, unused-symbol, concurrency, error-handling, and dependency-health inspections.
-   - Generated Protobuf bindings (`pkg/proto/gen`), build binaries (`bin`), and coverage output (`.coverage`) are excluded in `qodana.yaml`.
+   - Generated Protobuf bindings (`libs/proto/gen`), build binaries (`bin`), and coverage output (`.coverage`) are excluded in `qodana.yaml`.
    - Fix reported Qodana warnings at the root cause; do not suppress inspections with `//noinspection` unless there is a documented, unavoidable false positive.
 5. **`govulncheck`** (`make vuln`) — Scans Go dependencies for reachable known vulnerabilities.
 6. **`buf`** (`make proto-lint`, `make proto-breaking`) — Enforces Protobuf style and backward compatibility against `main`.

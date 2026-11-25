@@ -9,7 +9,7 @@
 
 ## Context
 
-Phase 1 of PrincessPink (**Platform Foundation**, Concept §9) establishes the shared `pkg/` libraries ([ADR-0003](ADR-0003-shared-logging-library.md)–[ADR-0007](ADR-0007-shared-uuid-utilities.md)), build/CI automation ([ADR-0008](ADR-0008-multi-module-makefile-build-automation.md)–[ADR-0009](ADR-0009-github-actions-ci-cd.md)), and the first stateful domain microservice: **`user-admin`** (`services/user-admin/`).
+Phase 1 of PrincessPink (**Platform Foundation**, Concept §9) establishes the shared `libs/` libraries ([ADR-0003](ADR-0003-shared-logging-library.md)–[ADR-0007](ADR-0007-shared-uuid-utilities.md)), build/CI automation ([ADR-0008](ADR-0008-multi-module-makefile-build-automation.md)–[ADR-0009](ADR-0009-github-actions-ci-cd.md)), and the first stateful domain microservice: **`user-admin`** (`services/user-admin/`).
 
 `user-admin` is the authoritative source of identity, authentication, authorization, and Group (campaign) management across the entire PrincessPink platform (Concept §2.2, §4.2, §5.1). Every downstream subsystem introduced in Phases 2–4 depends on it:
 
@@ -24,14 +24,14 @@ To build `user-admin` securely and cleanly in Phase 1—before `character-regist
 
 ## Decision
 
-PrincessPink implements **`user-admin`** as an independently versioned **Go 1.27+ microservice** (`services/user-admin/`) backed by a dedicated **`user_admin.*` schema in PostgreSQL 18+** ([ADR-0001](ADR-0001-minimum-postgresql-version.md)), exposing an internal **gRPC/Protobuf API** (`pkg/proto/useradmin/v1`, [ADR-0005](ADR-0005-shared-grpc-protobuf-contracts.md)), publishing domain events via a **transactional outbox** to NATS JetStream, and enforcing **`Argon2id` authentication**, **Ed25519 JWTs + rotating refresh tokens**, **TOTP/WebAuthn MFA**, **Player/GM RBAC**, and **Group participation invariants**.
+PrincessPink implements **`user-admin`** as an independently versioned **Go 1.27+ microservice** (`services/user-admin/`) backed by a dedicated **`user_admin.*` schema in PostgreSQL 18+** ([ADR-0001](ADR-0001-minimum-postgresql-version.md)), exposing an internal **gRPC/Protobuf API** (`libs/proto/useradmin/v1`, [ADR-0005](ADR-0005-shared-grpc-protobuf-contracts.md)), publishing domain events via a **transactional outbox** to NATS JetStream, and enforcing **`Argon2id` authentication**, **Ed25519 JWTs + rotating refresh tokens**, **TOTP/WebAuthn MFA**, **Player/GM RBAC**, and **Group participation invariants**.
 
 ### 1. Service Architecture & Internal Interfaces
 
 `user-admin` is deployed in the dedicated **`user-admin` AKS namespace** as a stateless, horizontally scalable `Deployment` (`distroless/static` non-root container, read-only root filesystem, `CGO_ENABLED=0`) with zero direct public internet exposure—all browser traffic enters via `frontend-gateway` (TLS 1.3) and reaches `user-admin` over internal mTLS gRPC.
 
-- **Shared Platform Modules:** Bootstraps structured non-PII JSON logging (`pkg/logging`, [ADR-0003](ADR-0003-shared-logging-library.md)), OpenTelemetry tracing, Prometheus metrics, and `/healthz` + `/readyz` probes (`pkg/telemetry`, [ADR-0004](ADR-0004-shared-opentelemetry-observability.md)), 12-Factor env + `*_FILE` Azure Key Vault CSI secrets (`pkg/config`, [ADR-0006](ADR-0006-shared-configuration-library.md)), and RFC 9562 UUIDv7 entity IDs (`pkg/uuid`, [ADR-0007](ADR-0007-shared-uuid-utilities.md)).
-- **Internal gRPC Surface (`pkg/proto/useradmin/v1`):**
+- **Shared Platform Modules:** Bootstraps structured non-PII JSON logging (`libs/logging`, [ADR-0003](ADR-0003-shared-logging-library.md)), OpenTelemetry tracing, Prometheus metrics, and `/healthz` + `/readyz` probes (`libs/telemetry`, [ADR-0004](ADR-0004-shared-opentelemetry-observability.md)), 12-Factor env + `*_FILE` Azure Key Vault CSI secrets (`libs/config`, [ADR-0006](ADR-0006-shared-configuration-library.md)), and RFC 9562 UUIDv7 entity IDs (`libs/uuid`, [ADR-0007](ADR-0007-shared-uuid-utilities.md)).
+- **Internal gRPC Surface (`libs/proto/useradmin/v1`):**
   - **`AuthService`:** `Register`, `Login`, `VerifyMFA`, `RefreshSession`, `Logout`, `RevokeAllSessions`, `ChangePassword`, `RequestPasswordReset`, `CompletePasswordReset`, and `GetJWKS` (publishes Ed25519 public keys for fast local JWT verification at `frontend-gateway`).
   - **`UserService`:** `GetUser`, `UpdateProfile`, `UpdateUserRole`, `EnrollTOTP`, `ConfirmTOTP`, `RegisterWebAuthnCredential`, `DisableMFA`, and `RegenerateRecoveryCodes`.
   - **`GroupService`:** `CreateGroup`, `GetGroup`, `ListUserGroups`, `UpdateGroupConfig`, `StartGroup` (validates mandatory `sim_start_date` and locks character selections), `ArchiveGroup`, `CreateInvitation`, `AcceptInvitation`, `RemoveMember`, `SelectGroupCharacter`, and `ListGroupMembers`.
@@ -58,7 +58,7 @@ PrincessPink implements **`user-admin`** as an independently versioned **Go 1.27
 ### 3. Authentication, `Argon2id` Password Hashing, MFA & Session Security
 
 1. **`Argon2id` Password Hashing (`golang.org/x/crypto/argon2`):**
-   - **Parameters:** Configurable via `pkg/config` with enforced secure minimums aligned with OWASP guidelines: `memory >= 64 MiB` (`65536 KiB`), `time >= 3` iterations, `parallelism = 2` (or `4` sized to pod CPU limits), `salt = 16 bytes` from `crypto/rand`, `keyLength = 32 bytes`.
+   - **Parameters:** Configurable via `libs/config` with enforced secure minimums aligned with OWASP guidelines: `memory >= 64 MiB` (`65536 KiB`), `time >= 3` iterations, `parallelism = 2` (or `4` sized to pod CPU limits), `salt = 16 bytes` from `crypto/rand`, `keyLength = 32 bytes`.
    - **PHC String Encoding & Transparent Upgrades:** Hashes are stored in standard PHC format (`$argon2id$v=19$m=65536,t=3,p=2$<b64-salt>$<b64-hash>`). On successful login, if a stored hash uses older/weaker parameters than the active configuration, `user-admin` transparently rehashes and updates `password_hash`.
    - **Timing & DoS Hardening:** Verification uses `crypto/subtle.ConstantTimeCompare`. Unknown-email logins execute a dummy `Argon2id` computation to equalize response latency and prevent account enumeration. A bounded concurrency semaphore limits simultaneous `Argon2id` derivations per pod so credential-stuffing bursts cannot OOM-kill `user-admin` containers.
 2. **Short-Lived Ed25519 JWTs & Rotating Refresh Tokens:**
@@ -125,7 +125,7 @@ sequenceDiagram
 
 | Option | Description | Evaluation |
 | :--- | :--- | :--- |
-| **1. Dedicated Go `user-admin` Microservice with PostgreSQL 18+, `Argon2id`, Ed25519 JWT + Rotating Refresh Tokens & Domain RBAC/Groups** | Purpose-built Go microservice in `services/user-admin/` owning `user_admin.*` schema, Argon2id auth, TOTP/WebAuthn MFA, Ed25519 JWTs, Group management, and immutable PostgreSQL 18 audit logs. | **Selected.** Zero external IdP bloat, native alignment with `go.work` and `pkg/*`, enforces PrincessPink's unique Group/character-selection invariants transactionally, and uses PostgreSQL 18 `uuidv7()` and `RETURNING OLD/NEW`. |
+| **1. Dedicated Go `user-admin` Microservice with PostgreSQL 18+, `Argon2id`, Ed25519 JWT + Rotating Refresh Tokens & Domain RBAC/Groups** | Purpose-built Go microservice in `services/user-admin/` owning `user_admin.*` schema, Argon2id auth, TOTP/WebAuthn MFA, Ed25519 JWTs, Group management, and immutable PostgreSQL 18 audit logs. | **Selected.** Zero external IdP bloat, native alignment with `go.work` and `libs/*`, enforces PrincessPink's unique Group/character-selection invariants transactionally, and uses PostgreSQL 18 `uuidv7()` and `RETURNING OLD/NEW`. |
 | **2. External Identity Provider (Keycloak / Auth0 / Entra External ID)** | Delegate user registration, passwords, MFA, and tokens to a third-party IdP while keeping a separate Group service. | **Rejected.** Keycloak introduces heavy JVM memory overhead and complex realm/theme operations on AKS; SaaS IdPs add vendor lock-in and per-MAU costs for an open-source project—while still requiring a custom microservice for Group lifecycles, `simulation_config`, and character-selection rules. *(Microsoft Entra ID remains used for Azure infrastructure/DB workload identity, not end-user RPG accounts.)* |
 | **3. `bcrypt` Password Hashing & Pure Server-Side Session Cookies (No JWTs)** | Hash passwords with `bcrypt` and require `frontend-gateway` to call `user-admin` synchronously on every HTTP/WebSocket request. | **Rejected.** `bcrypt` truncates passwords at 72 bytes and lacks configurable memory-hardness compared to `Argon2id`. Purely stateful session lookups on every request turn `user-admin` into a hot synchronous bottleneck for `frontend-sheets` and `frontend-chat`, whereas short-lived Ed25519 JWTs allow fast local edge verification while refresh-token rotation retains revocation control. |
 | **4. External Policy Engine (OPA / SpiceDB) in Phase 1** | Offload authorization decisions to a separate ReBAC/OPA cluster from day one. | **Rejected for Phase 1.** Premature operational overhead for two well-defined roles (`PLAYER`, `GAME_MASTER`) and straightforward relational group/ownership checks in PostgreSQL 18+. Encapsulating checks behind `AuthorizationService` gRPC preserves a clean migration path if policy complexity grows later. |
@@ -141,7 +141,7 @@ sequenceDiagram
 3. **Domain Integrity at the Database Layer (Concept §2.2):**
    Encoding one-character-per-player-per-group (`UNIQUE (group_id, user_id)`) and unique-character-per-group (`UNIQUE (group_id, selected_character_id)`) directly in PostgreSQL constraints prevents race conditions under concurrent requests.
 4. **Full Phase 1 Platform Alignment ([ADR-0003](ADR-0003-shared-logging-library.md)–[ADR-0009](ADR-0009-github-actions-ci-cd.md)):**
-   `user-admin` serves as the reference Phase 1 microservice proving out `pkg/logging`, `pkg/telemetry`, `pkg/proto`, `pkg/config`, `pkg/uuid`, `Makefile` (`SERVICE=user-admin`), and GitHub Actions Testcontainers integration testing with `postgres:18-alpine`.
+   `user-admin` serves as the reference Phase 1 microservice proving out `libs/logging`, `libs/telemetry`, `libs/proto`, `libs/config`, `libs/uuid`, `Makefile` (`SERVICE=user-admin`), and GitHub Actions Testcontainers integration testing with `postgres:18-alpine`.
 
 ---
 

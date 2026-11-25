@@ -1,4 +1,4 @@
-# ADR-0004: Shared OpenTelemetry & Observability Library (`pkg/telemetry`)
+# ADR-0004: Shared OpenTelemetry & Observability Library (`libs/telemetry`)
 
 - **Status:** Accepted
 - **Date:** 2026-11-22
@@ -15,13 +15,13 @@ PrincessPink executes both high-fan-out synchronous request trees and multi-stag
 - **Real-Time Messaging:** `frontend-chat` (`wss://`) → `chat-world-registry` / `chat-service` → NATS JetStream (`chat.world.<world_server_id>`, `chat.group.<group_id>`, `chat.dm.<pair_id>`) ([ADR-0002](ADR-0002-world-chat-microservices-and-server-selection.md)).
 - **Asynchronous Simulation Pipelines:** `sim-clock` → `sim-egg-selection` / `sim-menstruation` → `sim-ejaculation` → `sim-sperm-race` → `sim-gamete-surface` → `sim-conception` → `sim-dna` → `sim-gestation` → `sim-birth-date` / `sim-egg-reserve` / `sim-menarche` / `sim-mortality` (Concept §4.4).
 
-Without a shared observability bootstrap in `pkg/telemetry`, services would diverge in trace context propagation, metric naming, resource metadata, and graceful exporter shutdown—breaking end-to-end distributed traces and HPA/SLO dashboards in the AKS `observability` namespace.
+Without a shared observability bootstrap in `libs/telemetry`, services would diverge in trace context propagation, metric naming, resource metadata, and graceful exporter shutdown—breaking end-to-end distributed traces and HPA/SLO dashboards in the AKS `observability` namespace.
 
 ---
 
 ## Decision
 
-PrincessPink establishes a shared Go module **`pkg/telemetry`** built on the **OpenTelemetry Go SDK (`go.opentelemetry.io/otel`)**, exporting traces via **OTLP/gRPC** to the in-cluster OpenTelemetry Collector and exposing **Prometheus-compatible metrics** alongside standardized instrumentation helpers for Gin, gRPC, PostgreSQL, SQLite, and NATS JetStream.
+PrincessPink establishes a shared Go module **`libs/telemetry`** built on the **OpenTelemetry Go SDK (`go.opentelemetry.io/otel`)**, exporting traces via **OTLP/gRPC** to the in-cluster OpenTelemetry Collector and exposing **Prometheus-compatible metrics** alongside standardized instrumentation helpers for Gin, gRPC, PostgreSQL, SQLite, and NATS JetStream.
 
 ### 1. Unified Bootstrap & Resource Identity
 
@@ -29,14 +29,14 @@ Every microservice initializes telemetry once in `main()` via `telemetry.Init(ct
 
 - **Standard OTel Resource Attributes:** Automatically populates `service.name`, `service.version` (from `services/<service>/VERSION`), `service.namespace` (AKS namespace, e.g., `simulation`, `character-sheet`, `chat`, `frontend`, `user-admin`), `deployment.environment`, and `service.instance.id` (pod name / hostname).
 - **Graceful Shutdown Hook:** Returns a `Shutdown(ctx)` function invoked on `SIGTERM`/`SIGINT` with a bounded timeout (e.g., 5 seconds) to flush buffered spans and metric batches before pod termination.
-- **No-Op / Local Mode:** When `OTEL_EXPORTER_OTLP_ENDPOINT` is unset (e.g., unit tests or minimal local runs), `pkg/telemetry` cleanly falls back to a no-op trace exporter while keeping Prometheus `/metrics` active.
+- **No-Op / Local Mode:** When `OTEL_EXPORTER_OTLP_ENDPOINT` is unset (e.g., unit tests or minimal local runs), `libs/telemetry` cleanly falls back to a no-op trace exporter while keeping Prometheus `/metrics` active.
 
 ### 2. Distributed Tracing & Context Propagation
 
 - **Propagators:** Globally registers **W3C Trace Context** (`traceparent`, `tracestate`) and **W3C Baggage** (`baggage`) propagators.
 - **Transport Instrumentation:**
   - **Gin HTTP (`frontend-*`):** Provides `otelgin` middleware extracting/injecting W3C headers and recording HTTP route templates (preventing high-cardinality URL paths).
-  - **gRPC (All Internal Services):** Provides `otelgrpc` stats handlers (the modern OTel Go gRPC instrumentation) paired with `pkg/proto` client/server helpers ([ADR-0005](ADR-0005-shared-grpc-protobuf-contracts.md)).
+  - **gRPC (All Internal Services):** Provides `otelgrpc` stats handlers (the modern OTel Go gRPC instrumentation) paired with `libs/proto` client/server helpers ([ADR-0005](ADR-0005-shared-grpc-protobuf-contracts.md)).
   - **NATS JetStream:** Provides a thin header carrier adapter (`NATSHeaderCarrier`) to inject trace context on publish and extract/link parent spans on async consumption—preserving causal traces across multi-step biological event chains.
 - **Sampling Policy:** Parent-based trace sampling (`ParentBased(TraceIDRatioBased)`), defaulting to `1.0` in `dev`/`staging` and configurable (e.g., `0.1`–`0.25`) in `prod`, with errors and slow fan-outs eligible for tail-based sampling in the AKS OpenTelemetry Collector.
 
@@ -48,7 +48,7 @@ Every microservice initializes telemetry once in `main()` via `telemetry.Init(ct
 
 ### 4. Health & Readiness Endpoints
 
-`pkg/telemetry` (or its companion HTTP admin server helper) standardizes the operational probes required by AKS (Concept §3.5 & §6.3):
+`libs/telemetry` (or its companion HTTP admin server helper) standardizes the operational probes required by AKS (Concept §3.5 & §6.3):
 - `/healthz` — Liveness probe returning service identity and embedded `service_version`.
 - `/readyz` — Readiness probe running registered dependency checks (e.g., PostgreSQL ping, NATS connection, mounted SQLite reference DB check).
 - `/metrics` — Internal Prometheus scrape endpoint.
@@ -59,7 +59,7 @@ Every microservice initializes telemetry once in `main()` via `telemetry.Init(ct
 
 | Option | Description | Evaluation |
 | :--- | :--- | :--- |
-| **1. OpenTelemetry Go SDK + OTLP Collector + Prometheus Exporter (`pkg/telemetry`)** | Vendor-neutral OpenTelemetry SDK exporting traces to the in-cluster OTel Collector and metrics via Prometheus/OTLP. | **Selected.** Cloud- and vendor-neutral, natively integrates with AKS `observability` (Prometheus, Grafana, Azure Monitor), unifies HTTP/gRPC/NATS tracing, and directly implements Concept §6.1 & §7.1. |
+| **1. OpenTelemetry Go SDK + OTLP Collector + Prometheus Exporter (`libs/telemetry`)** | Vendor-neutral OpenTelemetry SDK exporting traces to the in-cluster OTel Collector and metrics via Prometheus/OTLP. | **Selected.** Cloud- and vendor-neutral, natively integrates with AKS `observability` (Prometheus, Grafana, Azure Monitor), unifies HTTP/gRPC/NATS tracing, and directly implements Concept §6.1 & §7.1. |
 | **2. Vendor-Specific Azure Monitor / Application Insights SDK** | Instrument Go services directly with proprietary Azure telemetry SDKs. | **Rejected.** Locks service code to a single cloud vendor, provides weaker Go gRPC/NATS ergonomics, and complicates local Docker Compose / `kind` development. |
 | **3. Separate Point Solutions (Direct `prometheus/client_golang` + Jaeger/Zipkin SDKs)** | Wire unrelated tracing and metrics libraries independently in each service. | **Rejected.** Duplicates resource metadata, diverges from W3C standards, and increases maintenance burden across 25+ microservices. |
 
@@ -72,7 +72,7 @@ Every microservice initializes telemetry once in `main()` via `telemetry.Init(ct
 2. **End-to-End Biological Pipeline Traceability (Concept §4.4):**
    Propagating W3C trace context through NATS JetStream headers links an entire reproduction chain (`sim-ejaculation` → `sim-sperm-race` → `sim-gamete-surface` → `sim-conception` → `sim-dna`) into a single navigable trace.
 3. **Log–Trace Correlation ([ADR-0003](ADR-0003-shared-logging-library.md)):**
-   `pkg/logging` reads `trace_id` and `span_id` directly from the OpenTelemetry span context initialized by `pkg/telemetry`, enabling one-click navigation between logs and traces.
+   `libs/logging` reads `trace_id` and `span_id` directly from the OpenTelemetry span context initialized by `libs/telemetry`, enabling one-click navigation between logs and traces.
 4. **AKS & Azure Monitor Compatibility (Concept §6.1 & §6.2):**
    Exporting OTLP to the `observability` namespace OpenTelemetry Collector decouples microservices from backend storage choices—the Collector can fan out to Azure Monitor, Grafana Tempo, or local Jaeger without recompiling any service.
 

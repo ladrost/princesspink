@@ -9,9 +9,9 @@
 
 ## Context
 
-PrincessPink is organized as a **Go 1.27+ multi-module workspace (`go.work`, `toolchain go1.27.4`)** containing shared libraries under `pkg/` and 25+ independently versioned microservices under `services/` (Concept §3.3 & §3.5). Developers and CI pipelines need a single, discoverable, reproducible interface to:
+PrincessPink is organized as a **Go 1.27+ multi-module workspace (`go.work`, `toolchain go1.27.4`)** containing shared libraries under `libs/` and 25+ independently versioned microservices under `services/` (Concept §3.3 & §3.5). Developers and CI pipelines need a single, discoverable, reproducible interface to:
 
-1. Manage Go workspace modules (`go work use`, `go work sync`, `go mod tidy`, `go mod verify`) across `pkg/` and `services/`.
+1. Manage Go workspace modules (`go work use`, `go work sync`, `go mod tidy`, `go mod verify`) across `libs/` and `services/`.
 2. Build static Linux binaries (`CGO_ENABLED=0`) with per-service semantic versions read from `services/<service>/VERSION` and injected via `-ldflags`.
 3. Run layered test suites: unit tests, race-detector tests, coverage reports, deterministic fixed-seed simulation tests (`-tags=simulation`), containerized integration tests (`-tags=integration`), and benchmarks.
 4. Enforce code quality, Protobuf contract checks (`buf`), and vulnerability scanning (`golangci-lint`, `govulncheck`, Trivy).
@@ -25,7 +25,7 @@ PrincessPink adopts a single root **GNU `Makefile`** as the canonical developer 
 
 ### 1. Workspace Discovery & Single-Service Scoping
 
-- **Automatic Module Discovery:** The `Makefile` dynamically discovers all Go modules under `pkg/*/go.mod` (`PKG_MODULES`) and `services/*/go.mod` (`SERVICE_MODULES`), gracefully handling the Phase 0 state when no modules exist yet.
+- **Automatic Module Discovery:** The `Makefile` dynamically discovers all Go modules under `libs/*/go.mod` (`LIBS_MODULES`) and `services/*/go.mod` (`SERVICE_MODULES`), gracefully handling the Phase 0 state when no modules exist yet.
 - **Optional Scoping via `SERVICE=<name>`:** Every build, test, lint, version, and container target runs across the full workspace by default, or narrows to a single microservice when `SERVICE=<service-name>` is supplied (e.g., `make test-race SERVICE=user-admin`, `make build SERVICE=sim-gamete-surface`).
 - **Strict Shell Execution:** Uses `SHELL := /usr/bin/env bash` with `.SHELLFLAGS := -euo pipefail -c` so subshell errors and unset variables fail immediately rather than silently continuing.
 - **Self-Documenting CLI:** Defaults to `make help`, parsing `##@` section headers and `##` target descriptions to display usage and concrete examples.
@@ -53,7 +53,7 @@ GitHub Actions workflows ([ADR-0009](ADR-0009-github-actions-ci-cd.md)) invoke t
 
 | Option | Description | Evaluation |
 | :--- | :--- | :--- |
-| **1. Root GNU `Makefile`** | Standard, pre-installed POSIX/GNU `make` coordinating all `pkg/` and `services/` modules with `SERVICE=` scoping. | **Selected.** Ubiquitous on Linux, macOS, and GitHub Actions runners with zero extra bootstrap tool required; simple, transparent, and already established in the repository. |
+| **1. Root GNU `Makefile`** | Standard, pre-installed POSIX/GNU `make` coordinating all `libs/` and `services/` modules with `SERVICE=` scoping. | **Selected.** Ubiquitous on Linux, macOS, and GitHub Actions runners with zero extra bootstrap tool required; simple, transparent, and already established in the repository. |
 | **2. `Taskfile` (`go-task`) or `just`** | Modern YAML or custom-DSL task runners. | **Rejected.** Requires every contributor and CI image to install an additional non-standard task runner before running basic repository commands. |
 | **3. Bazel / Buck2** | Hermetic polyglot build system with remote caching. | **Rejected.** Heavy configuration overhead (`BUILD.bazel` maintenance) disproportionate for a pure-Go workspace where `go.work` and Go's built-in build cache are already fast. |
 | **4. Per-Service Independent Makefiles / Shell Scripts** | Maintain separate scripts inside each `services/<svc>/` directory. | **Rejected.** Leads to drift across 25+ microservices whenever compiler flags (`-trimpath`, `-ldflags`), linters, or security scans are updated. |

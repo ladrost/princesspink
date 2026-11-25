@@ -1,4 +1,4 @@
-# ADR-0007: Shared UUID Utilities Library (`pkg/uuid`)
+# ADR-0007: Shared UUID Utilities Library (`libs/uuid`)
 
 - **Status:** Accepted
 - **Date:** 2026-11-22
@@ -22,19 +22,19 @@ If microservices generate UUIDs ad hoc (mixing UUIDv4, UUIDv7, string formatting
 
 ## Decision
 
-PrincessPink establishes a shared Go module **`pkg/uuid`** that standardizes on **RFC 9562 UUIDv7** as the default application-generated identifier across all Go microservices, wraps `github.com/google/uuid` with strict validation and serialization helpers, and enforces clear separation between entity UUIDs and cryptographic secrets.
+PrincessPink establishes a shared Go module **`libs/uuid`** that standardizes on **RFC 9562 UUIDv7** as the default application-generated identifier across all Go microservices, wraps `github.com/google/uuid` with strict validation and serialization helpers, and enforces clear separation between entity UUIDs and cryptographic secrets.
 
 ### 1. UUID Version Policy
 
 | Use Case | Standard | Rationale |
 | :--- | :--- | :--- |
 | **All Domain Entities & Events** (`Character`, `User`, `Group`, `ChatMessage`, `WorldChatServer`, `EjaculationDB`, `Outbox`, `CorrelationID`) | **RFC 9562 UUIDv7** (`uuid.NewV7()`) | Time-ordered (millisecond timestamp + monotonic/random bits), matches PostgreSQL 18+ native `uuidv7()`, eliminates random B-tree index fragmentation, and supports natural cursor pagination. |
-| **Security Secrets, Session Tokens, Refresh Tokens, CSRF Tokens, Password Reset Codes** | **Never UUID** (use `crypto/rand` ≥ 256-bit tokens) | UUIDv7 embeds a millisecond creation timestamp and is not a cryptographic bearer secret. `pkg/uuid` explicitly documents this boundary. |
+| **Security Secrets, Session Tokens, Refresh Tokens, CSRF Tokens, Password Reset Codes** | **Never UUID** (use `crypto/rand` ≥ 256-bit tokens) | UUIDv7 embeds a millisecond creation timestamp and is not a cryptographic bearer secret. `libs/uuid` explicitly documents this boundary. |
 | **Deterministic Tests** | **Seeded / Fixed Test Helpers** (`uuid.MustParse`, `uuid.Deterministic(seed)`) | Supports reproducible fixed-seed simulation cohort tests (`make test-sim`) without flakiness. |
 
 ### 2. Library API & Capabilities
 
-`pkg/uuid` provides a small, idiomatic Go API backed by `github.com/google/uuid`:
+`libs/uuid` provides a small, idiomatic Go API backed by `github.com/google/uuid`:
 
 - **Generation:** `New()` / `NewV7()` returning an RFC 9562 UUIDv7 (with monotonic sub-millisecond ordering where supported) and explicit error handling (plus `MustNew()` for initialization/tests only).
 - **Strict Parsing & Validation:** `Parse(s string)` and `ParseNonNil(s string)` rejecting malformed strings and rejecting the nil UUID (`00000000-0000-0000-0000-000000000000`) for required entity keys at HTTP/gRPC/NATS boundaries.
@@ -48,10 +48,10 @@ PrincessPink establishes a shared Go module **`pkg/uuid`** that standardizes on 
 
 | Option | Description | Evaluation |
 | :--- | :--- | :--- |
-| **1. Shared `pkg/uuid` Standardizing on RFC 9562 UUIDv7 (wrapping `google/uuid`)** | Thin shared module enforcing UUIDv7, non-nil validation, SQL/Protobuf/SQLite adapters, and safe artifact naming. | **Selected.** Full parity with PostgreSQL 18+ native `uuidv7()` ([ADR-0001](ADR-0001-minimum-postgresql-version.md)), standard 128-bit `uuid` column type, minimal dependency footprint, and zero path-traversal risk for SQLite artifact files. |
+| **1. Shared `libs/uuid` Standardizing on RFC 9562 UUIDv7 (wrapping `google/uuid`)** | Thin shared module enforcing UUIDv7, non-nil validation, SQL/Protobuf/SQLite adapters, and safe artifact naming. | **Selected.** Full parity with PostgreSQL 18+ native `uuidv7()` ([ADR-0001](ADR-0001-minimum-postgresql-version.md)), standard 128-bit `uuid` column type, minimal dependency footprint, and zero path-traversal risk for SQLite artifact files. |
 | **2. UUIDv4 Everywhere** | Generate purely random RFC 4122 UUIDv4 values in Go services. | **Rejected.** Causes B-tree index fragmentation and page splits in append-heavy PostgreSQL tables (`chat.messages`, audit logs, outbox) and breaks time-ordered cursor pagination. |
 | **3. ULID / KSUID** | Use non-UUID 128-bit or 160-bit time-ordered identifiers. | **Rejected.** Not natively supported by PostgreSQL's `uuid` type without custom encoding/extensions; diverges from PrincessPink's UUID-everywhere domain specification (Concept §2.1 & §2.3). |
-| **4. Direct Ad-Hoc `google/uuid` Usage Without `pkg/uuid`** | Let each microservice import and call `google/uuid` directly. | **Rejected.** Risks inconsistent UUIDv4 vs. UUIDv7 usage across 25+ services, duplicated nil-UUID validation, and inconsistent SQLite/Protobuf/PostgreSQL marshaling. |
+| **4. Direct Ad-Hoc `google/uuid` Usage Without `libs/uuid`** | Let each microservice import and call `google/uuid` directly. | **Rejected.** Risks inconsistent UUIDv4 vs. UUIDv7 usage across 25+ services, duplicated nil-UUID validation, and inconsistent SQLite/Protobuf/PostgreSQL marshaling. |
 
 ---
 
@@ -60,7 +60,7 @@ PrincessPink establishes a shared Go module **`pkg/uuid`** that standardizes on 
 1. **PostgreSQL 18+ Parity ([ADR-0001](ADR-0001-minimum-postgresql-version.md)):**
    Whether an ID is generated in Go (e.g., `sim-conception` allocating a new `character_uuid` before persisting to `character-registry`, or `sim-ejaculation` naming an ejaculation SQLite artifact) or in PostgreSQL (`DEFAULT uuidv7()`), every identifier conforms to the exact same RFC 9562 UUIDv7 format.
 2. **Safe Per-Character & Per-Ejaculation SQLite Artifact Naming (Concept §5.2):**
-   Validating UUIDs through `pkg/uuid` before constructing `egg_reserve_<character_uuid>.sqlite` or `ejaculation_<event_uuid>.sqlite` eliminates path-injection vulnerabilities in `sim-egg-reserve`, `sim-egg-selection`, `sim-ejaculation`, and `sim-sperm-race`.
+   Validating UUIDs through `libs/uuid` before constructing `egg_reserve_<character_uuid>.sqlite` or `ejaculation_<event_uuid>.sqlite` eliminates path-injection vulnerabilities in `sim-egg-reserve`, `sim-egg-selection`, `sim-ejaculation`, and `sim-sperm-race`.
 3. **Deterministic Simulation Testing (Concept §4.4 & §7.2):**
    Providing deterministic test UUID helpers lets fixed-seed simulation tests assert exact lineage trees and event sequences reproducibly.
 

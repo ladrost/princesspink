@@ -11,6 +11,6 @@ profile:
   inspections:
     - group: ALL
       ignore:
-        - "pkg/proto/gen"
+        - "libs/proto/gen"
         - "bin"
         - ".coverage"

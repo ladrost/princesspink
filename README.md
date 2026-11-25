@@ -59,7 +59,7 @@ PrincessPink enforces a strict, non-negotiable **zero-violence, zero-nudity** po
 | :--- | :--- |
 | **Language & Workspace** | Go 1.27+ (`go.work` multi-module workspace, `toolchain go1.27.4`, independent semantic versioning per service) |
 | **Frontend Microservices** | Go + **Gin** HTTP framework (`frontend-gateway`, `frontend-sheets`, `frontend-gm`, `frontend-chat`, `portrait-renderer`) with server-rendered HTML/HTMX and authenticated WebSockets (`wss://`) |
-| **Internal Communication** | **gRPC / Protocol Buffers** (`pkg/proto`, [ADR-0005](docs/architecture/ADR-0005-shared-grpc-protobuf-contracts.md)) for synchronous RPC & parallel attribute fan-out; **NATS JetStream** (or Azure Service Bus) for simulation ticks, lifecycle events, and chat pub/sub |
+| **Internal Communication** | **gRPC / Protocol Buffers** (`libs/proto`, [ADR-0005](docs/architecture/ADR-0005-shared-grpc-protobuf-contracts.md)) for synchronous RPC & parallel attribute fan-out; **NATS JetStream** (or Azure Service Bus) for simulation ticks, lifecycle events, and chat pub/sub |
 | **User Administration & Security** | `user-admin` backed by **PostgreSQL 18+** with `Argon2id` password hashing, MFA (TOTP / WebAuthn), RBAC (`PLAYER` / `GAME_MASTER`), TLS 1.3 / mTLS, and immutable audit logging ([ADR-0010](docs/architecture/ADR-0010-user-admin-auth-rbac-and-group-management.md)) |
 | **Character Sheet & Attributes** | `character-registry`, `sheet-aggregator` (concurrent `errgroup` fan-out with graceful degradation and tick-based caching), and dedicated `attr-*` microservices |
 | **Simulation & Genetics Engine** | Event-driven Go microservices (`sim-clock`, `sim-egg-reserve`, `sim-egg-selection`, `sim-menarche`, `sim-menstruation`, `sim-ejaculation`, `sim-sperm-race`, `sim-gamete-surface`, `sim-conception`, `sim-dna`, `sim-birth-date`, `sim-gestation`, `sim-health`, `sim-mortality`, `sim-lifecycle`) using **SQLite** for scientific reference data, per-female egg-reserve databases, and per-ejaculation sperm-cell artifacts |
@@ -82,7 +82,7 @@ princesspink/
 │   ├── api/                # OpenAPI & Protobuf API specifications
 │   ├── architecture/       # Architecture Decision Records (ADRs) & infrastructure specs
 │   └── runbooks/           # Operational & incident response runbooks
-├── pkg/                    # Shared Go libraries (gRPC/Protobuf contracts, auth middleware, telemetry, helpers)
+├── libs/                   # Shared Go libraries (gRPC/Protobuf contracts, auth middleware, telemetry, helpers)
 ├── services/               # Independently deployable and versioned Go microservices
 ├── CODE_OF_CONDUCT.md      # Contributor Covenant Code of Conduct (v2.0)
 ├── LICENSE                 # BSD 3-Clause License
@@ -130,7 +130,7 @@ make test-sim
 make versions
 ```
 
-> **Note:** PrincessPink is currently in the **concept and architectural foundation** stage—no microservice implementations have been committed under `pkg/` or `services/` yet. Start by reading [`docs/Concept.md`](docs/Concept.md) to explore the domain model, service boundaries, and implementation plan.
+> **Note:** PrincessPink is currently in the **concept and architectural foundation** stage—no microservice implementations have been committed under `libs/` or `services/` yet. Start by reading [`docs/Concept.md`](docs/Concept.md) to explore the domain model, service boundaries, and implementation plan.
 
 ---
 
@@ -138,7 +138,7 @@ make versions
 
 PrincessPink is currently in **Phase 0 / Architectural Foundation**. Planned implementation phases (detailed in [docs/Concept.md](docs/Concept.md#9-phased-implementation-roadmap)):
 
-1. **Phase 1 — Platform Foundation:** Shared `pkg/` libraries (logging [ADR-0003](docs/architecture/ADR-0003-shared-logging-library.md), OpenTelemetry [ADR-0004](docs/architecture/ADR-0004-shared-opentelemetry-observability.md), gRPC contracts [ADR-0005](docs/architecture/ADR-0005-shared-grpc-protobuf-contracts.md), config [ADR-0006](docs/architecture/ADR-0006-shared-configuration-library.md), UUID utilities [ADR-0007](docs/architecture/ADR-0007-shared-uuid-utilities.md)), `Makefile` ([ADR-0008](docs/architecture/ADR-0008-multi-module-makefile-build-automation.md)), GitHub Actions CI ([ADR-0009](docs/architecture/ADR-0009-github-actions-ci-cd.md)), and `user-admin` with PostgreSQL, Argon2id auth, RBAC, and Group management ([ADR-0010](docs/architecture/ADR-0010-user-admin-auth-rbac-and-group-management.md)).
+1. **Phase 1 — Platform Foundation:** Shared `libs/` libraries (logging [ADR-0003](docs/architecture/ADR-0003-shared-logging-library.md), OpenTelemetry [ADR-0004](docs/architecture/ADR-0004-shared-opentelemetry-observability.md), gRPC contracts [ADR-0005](docs/architecture/ADR-0005-shared-grpc-protobuf-contracts.md), config [ADR-0006](docs/architecture/ADR-0006-shared-configuration-library.md), UUID utilities [ADR-0007](docs/architecture/ADR-0007-shared-uuid-utilities.md)), `Makefile` ([ADR-0008](docs/architecture/ADR-0008-multi-module-makefile-build-automation.md)), GitHub Actions CI ([ADR-0009](docs/architecture/ADR-0009-github-actions-ci-cd.md)), and `user-admin` with PostgreSQL, Argon2id auth, RBAC, and Group management ([ADR-0010](docs/architecture/ADR-0010-user-admin-auth-rbac-and-group-management.md)).
 2. **Phase 2 — Character Sheet, Chat & Frontend MVP:** `frontend-gateway`, `frontend-sheets`, `frontend-gm`, `frontend-chat`, `chat-service`, `chat-world-registry` (player-selectable World Chat Servers, Group Chat, and 1-to-1 Direct Messages), `character-registry`, `sheet-aggregator`, initial `attr-*` microservices, and `portrait-renderer`.
 3. **Phase 3 — Core Reproduction Simulation Pipeline:** `sim-clock`, `sim-egg-reserve`, `sim-egg-selection`, `sim-menarche`, `sim-menstruation`, `sim-ejaculation`, `sim-sperm-race`, `sim-gamete-surface`, `sim-conception`, and `sim-dna` with SQLite stores, event bus integration, and fixed-seed cohort tests.
 4. **Phase 4 — Full Lifecycle & Population Features:** `sim-birth-date`, `sim-gestation`, `sim-health`, `sim-mortality`, `sim-lifecycle`, multi-generational family trees, and Game Master population analytics.
@@ -153,11 +153,11 @@ PrincessPink is currently in **Phase 0 / Architectural Foundation**. Planned imp
 - **[Architecture Docs (`docs/architecture/`)](docs/architecture/)** — Architecture Decision Records (ADRs) and infrastructure specifications:
   - [ADR-0001: Minimum PostgreSQL Version (PostgreSQL 18+)](docs/architecture/ADR-0001-minimum-postgresql-version.md)
   - [ADR-0002: World Chat in a Microservice Environment & Player World Chat Server Selection](docs/architecture/ADR-0002-world-chat-microservices-and-server-selection.md)
-  - [ADR-0003: Shared Structured Logging Library (`pkg/logging`)](docs/architecture/ADR-0003-shared-logging-library.md)
-  - [ADR-0004: Shared OpenTelemetry & Observability Library (`pkg/telemetry`)](docs/architecture/ADR-0004-shared-opentelemetry-observability.md)
-  - [ADR-0005: Shared gRPC & Protocol Buffers Contracts (`pkg/proto`)](docs/architecture/ADR-0005-shared-grpc-protobuf-contracts.md)
-  - [ADR-0006: Shared Configuration Library (`pkg/config`)](docs/architecture/ADR-0006-shared-configuration-library.md)
-  - [ADR-0007: Shared UUID Utilities Library (`pkg/uuid`)](docs/architecture/ADR-0007-shared-uuid-utilities.md)
+  - [ADR-0003: Shared Structured Logging Library (`libs/logging`)](docs/architecture/ADR-0003-shared-logging-library.md)
+  - [ADR-0004: Shared OpenTelemetry & Observability Library (`libs/telemetry`)](docs/architecture/ADR-0004-shared-opentelemetry-observability.md)
+  - [ADR-0005: Shared gRPC & Protocol Buffers Contracts (`libs/proto`)](docs/architecture/ADR-0005-shared-grpc-protobuf-contracts.md)
+  - [ADR-0006: Shared Configuration Library (`libs/config`)](docs/architecture/ADR-0006-shared-configuration-library.md)
+  - [ADR-0007: Shared UUID Utilities Library (`libs/uuid`)](docs/architecture/ADR-0007-shared-uuid-utilities.md)
   - [ADR-0008: Multi-Module Developer Workflow & Build Automation (`Makefile`)](docs/architecture/ADR-0008-multi-module-makefile-build-automation.md)
   - [ADR-0009: GitHub Actions CI/CD Architecture (`.github/workflows/`)](docs/architecture/ADR-0009-github-actions-ci-cd.md)
   - [ADR-0010: User Administration Service (`user-admin`) — PostgreSQL 18+, Argon2id Auth, Player/GM RBAC & Group Management](docs/architecture/ADR-0010-user-admin-auth-rbac-and-group-management.md)

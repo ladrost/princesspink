@@ -140,6 +140,6 @@ sequenceDiagram
 - Enables operators to add, categorize, drain, or retire World Chat Servers dynamically via `chat-world-registry` without redeploying `frontend-chat` or `chat-service`.
 
 ### Trade-offs & Operational Notes
-- **Additional Microservice (`chat-world-registry`):** Adds one lightweight independently versioned Go microservice in the `chat` namespace, with corresponding gRPC contract in `pkg/proto/chat/v1`, Kubernetes `NetworkPolicy` rules (`frontend-chat` → `chat-world-registry`, `chat-service` → `chat-world-registry`, `chat-world-registry` → PostgreSQL & NATS), and CI/CD pipeline entries.
+- **Additional Microservice (`chat-world-registry`):** Adds one lightweight independently versioned Go microservice in the `chat` namespace, with corresponding gRPC contract in `libs/proto/chat/v1`, Kubernetes `NetworkPolicy` rules (`frontend-chat` → `chat-world-registry`, `chat-service` → `chat-world-registry`, `chat-world-registry` → PostgreSQL & NATS), and CI/CD pipeline entries.
 - **Eventually Consistent Occupancy Counts:** Live player counts per World Chat Server are aggregated from periodic pod heartbeats and presented as population bands (`LOW`, `MEDIUM`, `HIGH`, `FULL`), which is intentionally approximate (a few seconds of lag) and sufficient for server selection.
 - **Anti-Hopping & Capacity Edge Cases:** `chat-service` must enforce a configurable switch cooldown to prevent abuse, and must handle race conditions near `max_capacity` gracefully by allowing slight soft-cap burst or prompting the player to choose another server.
