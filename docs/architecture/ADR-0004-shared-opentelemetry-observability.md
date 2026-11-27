@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-11-22
 - **Deciders:** PrincessPink Architecture
-- **Related Documents:** [`docs/Concept.md`](../Concept.md), [`README.md`](../../README.md), [`ADR-0003`](ADR-0003-shared-logging-library.md), [`ADR-0005`](ADR-0005-shared-grpc-protobuf-contracts.md), [`ADR-0006`](ADR-0006-shared-configuration-library.md), [`ADR-0012`](ADR-0012-private-subnet-isolation-and-encrypted-cloud-communication.md)
+- **Related Documents:** [`docs/Concept.md`](../Concept.md), [`README.md`](../../README.md), [`ADR-0003`](ADR-0003-shared-logging-library.md), [`ADR-0005`](ADR-0005-shared-grpc-protobuf-contracts.md), [`ADR-0006`](ADR-0006-shared-configuration-library.md), [`ADR-0012`](ADR-0012-private-subnet-isolation-and-encrypted-cloud-communication.md), [`ADR-0013`](ADR-0013-static-website-service-and-public-results-presentation.md)
 
 ---
 
@@ -11,7 +11,7 @@
 
 PrincessPink executes both high-fan-out synchronous request trees and multi-stage asynchronous biological pipelines on **Azure Kubernetes Service (AKS)**:
 
-- **Synchronous Fan-Out:** `frontend-sheets` → `sheet-aggregator` → `character-registry` + 15+ parallel `attr-*` microservices over gRPC (Concept §4.3).
+- **Synchronous Fan-Out:** `frontend-sheets` → `sheet-aggregator` → `character-registry` + 15+ parallel `attr-*` microservices over gRPC (Concept §4.3), and `frontend-website` → `website-service` → read-only public summary fan-out across `chat-world-registry`, `gamification-service`, `character-registry`, and `sim-clock` ([ADR-0013](ADR-0013-static-website-service-and-public-results-presentation.md)).
 - **Real-Time Messaging:** `frontend-chat` (`wss://`) → `chat-world-registry` / `chat-service` → NATS JetStream (`chat.world.<world_server_id>`, `chat.group.<group_id>`, `chat.dm.<pair_id>`) ([ADR-0002](ADR-0002-world-chat-microservices-and-server-selection.md)).
 - **Asynchronous Simulation Pipelines:** `sim-clock` / `sim-roleplay` → `sim-egg-selection` / `sim-menstruation` → `sim-ejaculation` → `sim-sperm-race` → `sim-gamete-surface` → `sim-conception` → `sim-dna` → `sim-prenatal-loss` / `sim-gestation` → `sim-birth-date` / `sim-egg-reserve` / `sim-menarche` / `sim-mortality` → `gamification-service`, as well as parentless character generation via `sim-character-generator` → `sim-dna` / `character-registry` / `sim-health` / `sim-lifecycle` / `sim-mortality` / `sim-egg-reserve` / `sim-menarche` / `sim-menstruation` (Concept §2.7, §2.9 & §4.4).
 
@@ -27,7 +27,7 @@ PrincessPink establishes a shared Go module **`libs/telemetry`** built on the **
 
 Every microservice initializes telemetry once in `main()` via `telemetry.Init(ctx, cfg)`:
 
-- **Standard OTel Resource Attributes:** Automatically populates `service.name`, `service.version` (from `services/<service>/VERSION`), `service.namespace` (AKS namespace, e.g., `simulation`, `character-sheet`, `chat`, `frontend`, `user-admin`), `deployment.environment`, and `service.instance.id` (pod name / hostname).
+- **Standard OTel Resource Attributes:** Automatically populates `service.name`, `service.version` (from `services/<service>/VERSION`), `service.namespace` (AKS namespace, e.g., `simulation`, `character-sheet`, `chat`, `frontend`, `website`, `user-admin`), `deployment.environment`, and `service.instance.id` (pod name / hostname).
 - **Graceful Shutdown Hook:** Returns a `Shutdown(ctx)` function invoked on `SIGTERM`/`SIGINT` with a bounded timeout (e.g., 5 seconds) to flush buffered spans and metric batches before pod termination.
 - **No-Op / Local Mode:** When `OTEL_EXPORTER_OTLP_ENDPOINT` is unset (e.g., unit tests or minimal local runs), `libs/telemetry` cleanly falls back to a no-op trace exporter while keeping Prometheus `/metrics` active.
 
@@ -44,7 +44,7 @@ Every microservice initializes telemetry once in `main()` via `telemetry.Init(ct
 
 - **Prometheus-Compatible Exposition:** Uses the OpenTelemetry Go `prometheus` exporter bridged to a dedicated `/metrics` endpoint (bound on an internal management port over HTTPS / mTLS in cloud environments and never exposed through public AKS Ingress; [ADR-0012](ADR-0012-private-subnet-isolation-and-encrypted-cloud-communication.md)) scraped by Prometheus / Azure Monitor Managed Prometheus.
 - **Standard Service Metrics:** Automatically registers Go runtime metrics (`runtime`), HTTP/gRPC request counts and latency histograms (p50/p95/p99), and gRPC client fan-out error counters (critical for `sheet-aggregator` graceful degradation visibility).
-- **Domain Metric Conventions:** Defines shared metric naming conventions (`princesspink_<domain>_<metric>_<unit>`, e.g., `princesspink_sim_tick_duration_seconds`, `princesspink_sim_characters_generated_total`, `princesspink_sim_reappearances_total`, `princesspink_character_npc_claims_total`, `princesspink_roleplay_events_total`, `princesspink_gamification_milestones_total`, `princesspink_sim_conceptions_total`, `princesspink_sim_prenatal_losses_total`, `princesspink_sheet_attr_degraded_total`, `princesspink_chat_world_sessions_active`) and strictly forbids high-cardinality labels such as `character_uuid`, `user_uuid`, or `ejaculation_id` on Prometheus metrics (those belong on traces and structured logs; use strictly bounded enums like `creation_source`, `simulation_mode`, `participation_role`, `event_type`, `orgasm_type`, `milestone_category`, or `loss_stage`).
+- **Domain Metric Conventions:** Defines shared metric naming conventions (`princesspink_<domain>_<metric>_<unit>`, e.g., `princesspink_sim_tick_duration_seconds`, `princesspink_sim_characters_generated_total`, `princesspink_sim_reappearances_total`, `princesspink_character_npc_claims_total`, `princesspink_roleplay_events_total`, `princesspink_gamification_milestones_total`, `princesspink_sim_conceptions_total`, `princesspink_sim_prenatal_losses_total`, `princesspink_sheet_attr_degraded_total`, `princesspink_chat_world_sessions_active`, `princesspink_website_publishes_total`, `princesspink_website_widget_degraded_total`) and strictly forbids high-cardinality labels such as `character_uuid`, `user_uuid`, or `ejaculation_id` on Prometheus metrics (those belong on traces and structured logs; use strictly bounded enums like `creation_source`, `simulation_mode`, `participation_role`, `event_type`, `orgasm_type`, `milestone_category`, `loss_stage`, `page_type`, `widget_key`, or `cache_status`).
 
 ### 4. Health & Readiness Endpoints
 
@@ -86,6 +86,6 @@ Every microservice initializes telemetry once in `main()` via `telemetry.Init(ct
 - Strict cardinality discipline prevents Prometheus memory exhaustion as simulated populations grow across generations.
 
 ### Trade-offs & Operational Notes
-- **Collector Dependency & Encrypted Transport in AKS ([ADR-0012](ADR-0012-private-subnet-isolation-and-encrypted-cloud-communication.md)):** Requires deploying and maintaining an OpenTelemetry Collector in the private `observability` namespace subnet (`snet-observability`) with explicit Azure NSG and `NetworkPolicy` egress rules from `frontend`, `user-admin`, `chat`, `character-sheet`, `simulation`, and `messaging`. In all cloud environments (`dev`, `staging`, `prod`), OTLP/gRPC export must use TLS 1.3 / mTLS (never `otlptracegrpc.WithInsecure()`).
+- **Collector Dependency & Encrypted Transport in AKS ([ADR-0012](ADR-0012-private-subnet-isolation-and-encrypted-cloud-communication.md)):** Requires deploying and maintaining an OpenTelemetry Collector in the private `observability` namespace subnet (`snet-observability`) with explicit Azure NSG and `NetworkPolicy` egress rules from `frontend`, `website`, `user-admin`, `chat`, `character-sheet`, `simulation`, and `messaging`. In all cloud environments (`dev`, `staging`, `prod`), OTLP/gRPC export must use TLS 1.3 / mTLS (never `otlptracegrpc.WithInsecure()`).
 - **Internal Admin Port Isolation:** `/metrics` must bind to an encrypted (HTTPS / mTLS) internal admin port in cloud environments (and remain blocked at Ingress) so internal operational telemetry is never publicly exposed or transmitted in plaintext.
 - **Cardinality Reviews:** Code reviews and CI checks must ensure `character_uuid`, `user_uuid`, and `group_id` are attached to trace span attributes and `slog` logs—never as unbounded Prometheus metric labels.

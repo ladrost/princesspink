@@ -9,7 +9,7 @@
 
 ## Context
 
-PrincessPink decomposes its platform into dozens of independently versioned Go (`1.27+`) microservices across five functional domains (`frontend-*`, `user-admin`, `chat-*`, `character-registry`/`sheet-aggregator`/`attr-*`, and `sim-*`) running on **Azure Kubernetes Service (AKS)** and shipping logs to **Azure Monitor & Log Analytics** (Concept §6.2 & §7.1).
+PrincessPink decomposes its platform into dozens of independently versioned Go (`1.27+`) microservices across six functional domains (`frontend-*`, `website-service`, `user-admin`, `chat-*`, `character-registry`/`sheet-aggregator`/`attr-*`, and `sim-*`) running on **Azure Kubernetes Service (AKS)** and shipping logs to **Azure Monitor & Log Analytics** (Concept §6.2 & §7.1).
 
 Without a shared logging library under `libs/logging`:
 
@@ -87,7 +87,7 @@ PrincessPink establishes a shared Go module **`libs/logging`** built strictly on
 ## Consequences
 
 ### Positive
-- Uniform, machine-parseable JSON logs across all AKS namespaces (`frontend`, `user-admin`, `chat`, `character-sheet`, `simulation`).
+- Uniform, machine-parseable JSON logs across all AKS namespaces (`frontend`, `website`, `user-admin`, `chat`, `character-sheet`, `simulation`).
 - Automatic correlation between logs, OpenTelemetry traces, and PrincessPink domain entities (`character_uuid`, `group_id`, `user_uuid`).
 - Zero third-party logging framework lock-in; seamless interoperability with Go 1.27+ libraries.
 
