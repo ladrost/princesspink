@@ -20,6 +20,7 @@ This file provides authoritative instructions for AI coding agents and contribut
   - [`docs/architecture/ADR-0008`](docs/architecture/ADR-0008-multi-module-makefile-build-automation.md) — Multi-module `Makefile` build automation.
   - [`docs/architecture/ADR-0009`](docs/architecture/ADR-0009-github-actions-ci-cd.md) — GitHub Actions CI/CD architecture.
   - [`docs/architecture/ADR-0010`](docs/architecture/ADR-0010-user-admin-auth-rbac-and-group-management.md) — `user-admin` auth, RBAC & group management.
+  - [`docs/architecture/ADR-0011`](docs/architecture/ADR-0011-go-as-sole-programming-language.md) — Go as the sole programming language (no planned polyglot breaks).
 
 ---
 
@@ -53,7 +54,7 @@ Respect these domain rules across all services and tests:
 
 ## 4. Repository Layout & Multi-Module Workspace
 
-- **Workspace:** Go **1.27+** multi-module workspace defined in root `go.work` (`toolchain go1.27.4`; no root module). Register every new module under `libs/<module>` or `services/<service>` with `make work-use` and `make work-sync`.
+- **Workspace:** Go **1.27+** is the sole programming language for the project ([ADR-0011](docs/architecture/ADR-0011-go-as-sole-programming-language.md); no planned polyglot splits with Python, Rust, C++, or other languages), organized in a multi-module workspace defined in root `go.work` (`toolchain go1.27.4`; no root module). Register every new module under `libs/<module>` or `services/<service>` with `make work-use` and `make work-sync`.
 - **Shared Packages (`libs/`):** Reusable platform libraries (`libs/logging`, `libs/telemetry`, `libs/proto`, `libs/config`, `libs/uuid`). Keep them small, well-tested, and free of service-specific business logic.
 - **Microservices (`services/<service-name>/`):** Independently buildable, deployable, and semantically versioned services:
   - Must contain `go.mod`, a `VERSION` file (SemVer, e.g. `0.1.0`), `cmd/<service-name>/main.go` (or `cmd/server/main.go`), and `internal/` packages for private domain/adapter code.

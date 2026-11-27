@@ -393,7 +393,7 @@ Every character carries both universal lifecycle attributes and biologically gro
 ## 3. System Architecture Overview
 
 ### 3.1 Architectural Style
-PrincessPink follows a **distributed microservices architecture** written in **Go** and deployed on **Kubernetes** via **Microsoft Azure Kubernetes Service (AKS)**. Services are organized into five primary functional domains:
+PrincessPink follows a **distributed microservices architecture** written exclusively in **Go** (see [ADR-0011](architecture/ADR-0011-go-as-sole-programming-language.md)) and deployed on **Kubernetes** via **Microsoft Azure Kubernetes Service (AKS)**. Services are organized into five primary functional domains:
 1. **Frontend Microservices (Go + Gin)** — UI rendering, BFF aggregation, auth/session handling, real-time chat UI/WebSocket edge, and user experience.
 2. **User Administration Service** — Identity, authentication, RBAC/group authorization, backed by central **PostgreSQL**.
 3. **Character Sheet & Attribute Microservices** — Composable character sheet aggregation with one dedicated microservice per calculated attribute/value.
@@ -890,7 +890,7 @@ PrincessPink runs on **Azure Kubernetes Service (AKS)** with workload isolation 
 ### 7.3 CI/CD & Developer Experience
 - **Local Development:** `Makefile` targets (see [ADR-0008](architecture/ADR-0008-multi-module-makefile-build-automation.md)), typed 12-Factor environment/file-secret configuration (`libs/config`, see [ADR-0006](architecture/ADR-0006-shared-configuration-library.md)), and local Kubernetes (`kind` / `k3d`) or Docker Compose stack for running core services locally without Azure dependencies.
 - **CI/CD (`.github/workflows/`):** Automated `golangci-lint`, unit/integration tests, vulnerability scanning (`govulncheck`, Trivy), independent per-service versioned multi-arch container builds to ACR (tagged with each microservice's own semantic version), and GitOps/Helm deployments to AKS (dev → staging → prod) (see [ADR-0009](architecture/ADR-0009-github-actions-ci-cd.md)).
-- **Operational Documentation:** API contracts in `docs/api/`, Architecture Decision Records (ADRs) in `docs/architecture/` ([ADR-0001](architecture/ADR-0001-minimum-postgresql-version.md)–[ADR-0010](architecture/ADR-0010-user-admin-auth-rbac-and-group-management.md)), and incident/backup runbooks in `docs/runbooks/`.
+- **Operational Documentation:** API contracts in `docs/api/`, Architecture Decision Records (ADRs) in `docs/architecture/` ([ADR-0001](architecture/ADR-0001-minimum-postgresql-version.md)–[ADR-0011](architecture/ADR-0011-go-as-sole-programming-language.md)), and incident/backup runbooks in `docs/runbooks/`.
 
 ---
 
