@@ -14,7 +14,7 @@ PrincessPink's microservices rely heavily on low-latency, strongly typed synchro
 - **High Fan-Out Character Sheet Aggregation:** `sheet-aggregator` invokes `character-registry` and 15+ dedicated `attr-*` microservices concurrently via Go `errgroup` with strict per-call deadlines.
 - **Authorization & Group Rules:** `frontend-gateway`, `sheet-aggregator`, `character-registry`, and `chat-service` query `user-admin` to verify Player/Game Master roles, single-character-per-group selections, and child ownership rules.
 - **Real-Time Chat Control & Streaming:** `frontend-chat`, `chat-service`, and `chat-world-registry` exchange World Chat Server listings, occupancy heartbeats, `SwitchWorldServer` commands, and message streams ([ADR-0002](ADR-0002-world-chat-microservices-and-server-selection.md)).
-- **Direct Simulation Queries:** Synchronous calculation RPCs to `sim-birth-date`, `sim-egg-selection`, `sim-menarche`, and `sim-mortality`.
+- **Direct Simulation Queries:** Synchronous calculation RPCs to `sim-prenatal-loss`, `sim-birth-date`, `sim-egg-selection`, `sim-menarche`, and `sim-mortality`.
 
 Because every microservice is independently versioned and deployed (Concept §3.5), internal API contracts must enforce strict backward compatibility, prevent accidental breaking changes, and minimize boilerplate across 25+ Go services.
 
