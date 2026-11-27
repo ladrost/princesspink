@@ -11,8 +11,8 @@
 
 PrincessPink uses a **UUID-everywhere** identity model across all microservices, databases, and events (Concept §2.1, §2.3, §3.4 & [ADR-0001](ADR-0001-minimum-postgresql-version.md)):
 
-- **Characters:** Every Character receives a globally unique, immutable `UUID` at conception (`CONCEIVED` → `GESTATING` → `ALIVE` → `DECEASED`) that also links per-female Egg-Reserve SQLite databases (`egg_reserve_<character_uuid>.sqlite`) and lineage graphs (`mother_uuid`, `father_uuid`).
-- **Users, Groups & Ownership:** `USER`, `GROUP`, `GROUP_MEMBERSHIP`, and `OWNERSHIP_AGREEMENT` records are keyed by UUID.
+- **Characters:** Every Character receives a globally unique, immutable `UUID` either at conception (`CONCEIVED` → `GESTATING` → `ALIVE` → `DECEASED`) or at parentless character generation via `sim-character-generator` (direct `ALIVE` → `DECEASED` with `mother_uuid = null`, `father_uuid = null`), linking per-female Egg-Reserve SQLite databases (`egg_reserve_<character_uuid>.sqlite`), `CHARACTER_GENERATION_RECORD` audit rows, and lineage graphs (`mother_uuid`, `father_uuid`).
+- **Users, Groups & Ownership:** `USER`, `GROUP`, `GROUP_MEMBERSHIP`, `CHARACTER_GENERATION_RECORD`, and `OWNERSHIP_AGREEMENT` records are keyed by UUID.
 - **Chat & Events:** `WORLD_CHAT_SERVER`, `CHAT_CHANNEL`, `CHAT_MESSAGE`, `EJACULATION_DB`, `LIFECYCLE_EVENT`, transactional outbox rows, audit logs, and request `correlation_id` values are UUID-keyed.
 - **PostgreSQL 18+ Alignment:** [ADR-0001](ADR-0001-minimum-postgresql-version.md) adopted PostgreSQL 18+ specifically for native RFC 9562 **`uuidv7()`** time-ordered primary keys, improving B-tree index locality and enabling cursor-based pagination on append-heavy tables (`chat.messages`, audit logs, outbox).
 
@@ -58,7 +58,7 @@ PrincessPink establishes a shared Go module **`libs/uuid`** that standardizes on
 ## Rationale & Alignment with PrincessPink Requirements
 
 1. **PostgreSQL 18+ Parity ([ADR-0001](ADR-0001-minimum-postgresql-version.md)):**
-   Whether an ID is generated in Go (e.g., `sim-conception` allocating a new `character_uuid` before persisting to `character-registry`, or `sim-ejaculation` naming an ejaculation SQLite artifact) or in PostgreSQL (`DEFAULT uuidv7()`), every identifier conforms to the exact same RFC 9562 UUIDv7 format.
+   Whether an ID is generated in Go (e.g., `sim-conception` or `sim-character-generator` allocating a new `character_uuid` before persisting to `character-registry`, or `sim-ejaculation` naming an ejaculation SQLite artifact) or in PostgreSQL (`DEFAULT uuidv7()`), every identifier conforms to the exact same RFC 9562 UUIDv7 format.
 2. **Safe Per-Character & Per-Ejaculation SQLite Artifact Naming (Concept §5.2):**
    Validating UUIDs through `libs/uuid` before constructing `egg_reserve_<character_uuid>.sqlite` or `ejaculation_<event_uuid>.sqlite` eliminates path-injection vulnerabilities in `sim-egg-reserve`, `sim-egg-selection`, `sim-ejaculation`, and `sim-sperm-race`.
 3. **Deterministic Simulation Testing (Concept §4.4 & §7.2):**
