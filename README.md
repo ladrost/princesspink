@@ -57,7 +57,7 @@ PrincessPink enforces a strict, non-negotiable **zero-violence, zero-nudity** po
 
 | Layer | Technology / Approach |
 | :--- | :--- |
-| **Language & Workspace** | Go 1.27+ (`go.work` multi-module workspace, `toolchain go1.27.4`, independent semantic versioning per service) |
+| **Language & Workspace** | Go 1.27+ as sole programming language (`go.work` multi-module workspace, `toolchain go1.27.4`, independent semantic versioning per service; [ADR-0011](docs/architecture/ADR-0011-go-as-sole-programming-language.md)) |
 | **Frontend Microservices** | Go + **Gin** HTTP framework (`frontend-gateway`, `frontend-sheets`, `frontend-gm`, `frontend-chat`, `portrait-renderer`) with server-rendered HTML/HTMX and authenticated WebSockets (`wss://`) |
 | **Internal Communication** | **gRPC / Protocol Buffers** (`libs/proto`, [ADR-0005](docs/architecture/ADR-0005-shared-grpc-protobuf-contracts.md)) for synchronous RPC & parallel attribute fan-out; **NATS JetStream** (or Azure Service Bus) for simulation ticks, lifecycle events, and chat pub/sub |
 | **User Administration & Security** | `user-admin` backed by **PostgreSQL 18+** with `Argon2id` password hashing, MFA (TOTP / WebAuthn), RBAC (`PLAYER` / `GAME_MASTER`), TLS 1.3 / mTLS, and immutable audit logging ([ADR-0010](docs/architecture/ADR-0010-user-admin-auth-rbac-and-group-management.md)) |
@@ -161,6 +161,7 @@ PrincessPink is currently in **Phase 0 / Architectural Foundation**. Planned imp
   - [ADR-0008: Multi-Module Developer Workflow & Build Automation (`Makefile`)](docs/architecture/ADR-0008-multi-module-makefile-build-automation.md)
   - [ADR-0009: GitHub Actions CI/CD Architecture (`.github/workflows/`)](docs/architecture/ADR-0009-github-actions-ci-cd.md)
   - [ADR-0010: User Administration Service (`user-admin`) — PostgreSQL 18+, Argon2id Auth, Player/GM RBAC & Group Management](docs/architecture/ADR-0010-user-admin-auth-rbac-and-group-management.md)
+  - [ADR-0011: Go as the Sole Programming Language (Go 1.27+)](docs/architecture/ADR-0011-go-as-sole-programming-language.md)
 - **[Operational Runbooks (`docs/runbooks/`)](docs/runbooks/)** — Deployment, backup, and incident response runbooks (planned).
 
 ---
