@@ -38,7 +38,7 @@ All code, UI templates, API schemas, seed data, tests, and documentation **must*
 
 Respect these domain rules across all services and tests:
 
-- **Permanent Identity & Lifecycle:** Assign a globally unique, immutable `UUIDv7` at conception and preserve it across `CONCEIVED` → `GESTATING` → `ALIVE` → `DECEASED`. Deceased character records remain queryable; parent references are immutable (except founder characters).
+- **Permanent Identity & Lifecycle:** Assign a globally unique, immutable `UUIDv7` at conception and preserve it across `CONCEIVED` → `GESTATING` → `ALIVE` → `DECEASED` as well as natural prenatal loss (`CONCEIVED`/`GESTATING` → `DECEASED` via `sim-prenatal-loss`, enabled by default and GM-configurable in `GROUP.simulation_config`). On prenatal loss, keep `date_of_birth` null, record `date_of_death` and `PREGNANCY` outcome metadata, close any `PENDING` `OWNERSHIP_AGREEMENT` (`CLOSED_PRENATAL_LOSS`), skip newborn-only services (`sim-egg-reserve`, `sim-menarche`, `sim-mortality`), and trigger maternal recovery. Deceased character records remain queryable; parent references are immutable (except founder characters).
 - **Genetics vs. Phenotype:** The 23-pair diploid genome, biological gender (`FEMALE`/`MALE`), and Mendelian ABO + RhD `blood_type` are determined at conception and are **immutable**. Appearance (`eye_color`, `hair_color`, `skin_color`), physical metrics (`height_cm`, `weight_kg`, BMI, body composition), health indicators, and fertility/intercourse values evolve dynamically across life stages and role-play.
 - **Gender-Specific Biology:**
   - Female characters receive a dedicated UUID-linked Egg-Reserve SQLite database at birth; fertility is strictly `0` before first ovulation and upon climacterium.

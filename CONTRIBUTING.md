@@ -323,7 +323,7 @@ Use the shared platform libraries defined in our ADRs rather than introducing co
 
 ### Domain & Scientific Modeling Invariants
 
-- **Immutable Identity & Lineage:** Characters receive an immutable `UUIDv7` at conception preserved across `CONCEIVED` → `GESTATING` → `ALIVE` → `DECEASED`. Diploid genome, biological `gender`, Mendelian ABO + RhD `blood_type`, and parent links are immutable.
+- **Immutable Identity & Lineage:** Characters receive an immutable `UUIDv7` at conception preserved across `CONCEIVED` → `GESTATING` → `ALIVE` → `DECEASED` (including natural prenatal loss `CONCEIVED`/`GESTATING` → `DECEASED` via `sim-prenatal-loss`, with `date_of_birth` remaining null and `date_of_death` recorded). Diploid genome, biological `gender`, Mendelian ABO + RhD `blood_type`, and parent links are immutable.
 - **Deterministic Stochasticity:** Seed every probabilistic biological step explicitly from `(group_id, sim_tick, event_id)` using `math/rand/v2`, store scientific parameters in versioned read-only SQLite reference datasets or versioned `GROUP.simulation_config` JSONB, and stamp `service_version` on outputs and events.
 - **Database & Event Atomicity:** Use parameterized queries exclusively with `pgx/v5` (zero SQL string concatenation), versioned SQL migrations, PostgreSQL 18 `RETURNING OLD, NEW` for atomic audit logs, and a transactional outbox paired with idempotent NATS JetStream consumers.
 - **Authorization & Auditability:** Enforce RBAC (`PLAYER` / `GAME_MASTER`) and resource/group ownership checks at both gateway and backend services ([ADR-0010](docs/architecture/ADR-0010-user-admin-auth-rbac-and-group-management.md)). Bound and audit-log all GM adjustments.

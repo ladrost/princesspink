@@ -13,7 +13,7 @@ PrincessPink executes both high-fan-out synchronous request trees and multi-stag
 
 - **Synchronous Fan-Out:** `frontend-sheets` → `sheet-aggregator` → `character-registry` + 15+ parallel `attr-*` microservices over gRPC (Concept §4.3).
 - **Real-Time Messaging:** `frontend-chat` (`wss://`) → `chat-world-registry` / `chat-service` → NATS JetStream (`chat.world.<world_server_id>`, `chat.group.<group_id>`, `chat.dm.<pair_id>`) ([ADR-0002](ADR-0002-world-chat-microservices-and-server-selection.md)).
-- **Asynchronous Simulation Pipelines:** `sim-clock` → `sim-egg-selection` / `sim-menstruation` → `sim-ejaculation` → `sim-sperm-race` → `sim-gamete-surface` → `sim-conception` → `sim-dna` → `sim-gestation` → `sim-birth-date` / `sim-egg-reserve` / `sim-menarche` / `sim-mortality` (Concept §4.4).
+- **Asynchronous Simulation Pipelines:** `sim-clock` → `sim-egg-selection` / `sim-menstruation` → `sim-ejaculation` → `sim-sperm-race` → `sim-gamete-surface` → `sim-conception` → `sim-dna` → `sim-prenatal-loss` / `sim-gestation` → `sim-birth-date` / `sim-egg-reserve` / `sim-menarche` / `sim-mortality` (Concept §4.4).
 
 Without a shared observability bootstrap in `libs/telemetry`, services would diverge in trace context propagation, metric naming, resource metadata, and graceful exporter shutdown—breaking end-to-end distributed traces and HPA/SLO dashboards in the AKS `observability` namespace.
 
@@ -44,7 +44,7 @@ Every microservice initializes telemetry once in `main()` via `telemetry.Init(ct
 
 - **Prometheus-Compatible Exposition:** Uses the OpenTelemetry Go `prometheus` exporter bridged to a dedicated `/metrics` HTTP endpoint (bound on an internal management port not exposed through public AKS Ingress) scraped by Prometheus / Azure Monitor Managed Prometheus.
 - **Standard Service Metrics:** Automatically registers Go runtime metrics (`runtime`), HTTP/gRPC request counts and latency histograms (p50/p95/p99), and gRPC client fan-out error counters (critical for `sheet-aggregator` graceful degradation visibility).
-- **Domain Metric Conventions:** Defines shared metric naming conventions (`princesspink_<domain>_<metric>_<unit>`, e.g., `princesspink_sim_tick_duration_seconds`, `princesspink_sim_conceptions_total`, `princesspink_sheet_attr_degraded_total`, `princesspink_chat_world_sessions_active`) and strictly forbids high-cardinality labels such as `character_uuid`, `user_uuid`, or `ejaculation_id` on Prometheus metrics (those belong on traces and structured logs).
+- **Domain Metric Conventions:** Defines shared metric naming conventions (`princesspink_<domain>_<metric>_<unit>`, e.g., `princesspink_sim_tick_duration_seconds`, `princesspink_sim_conceptions_total`, `princesspink_sim_prenatal_losses_total`, `princesspink_sheet_attr_degraded_total`, `princesspink_chat_world_sessions_active`) and strictly forbids high-cardinality labels such as `character_uuid`, `user_uuid`, or `ejaculation_id` on Prometheus metrics (those belong on traces and structured logs).
 
 ### 4. Health & Readiness Endpoints
 
