@@ -12,9 +12,9 @@
 PrincessPink's microservices rely heavily on low-latency, strongly typed synchronous internal RPCs (Concept §3.4 & §4.3):
 
 - **High Fan-Out Character Sheet Aggregation:** `sheet-aggregator` invokes `character-registry` and 15+ dedicated `attr-*` microservices concurrently via Go `errgroup` with strict per-call deadlines.
-- **Authorization & Group Rules:** `frontend-gateway`, `sheet-aggregator`, `character-registry`, and `chat-service` query `user-admin` to verify Player/Game Master roles, single-character-per-group selections, and child ownership rules.
+- **Authorization & Group Rules:** `frontend-gateway`, `sheet-aggregator`, `character-registry`, and `chat-service` query `user-admin` to verify Player/Game Master roles, single-character-per-group selections (including point-in-time era liveness), owning-Player vs. GM unowned-NPC activation (`ActivateGroupNpc`), `REPLAY_IMMUTABLE` write denial, atomic `ClaimNpcOwnership`, and child ownership rules.
 - **Real-Time Chat Control & Streaming:** `frontend-chat`, `chat-service`, and `chat-world-registry` exchange World Chat Server listings, occupancy heartbeats, `SwitchWorldServer` commands, and message streams ([ADR-0002](ADR-0002-world-chat-microservices-and-server-selection.md)).
-- **Direct Simulation Queries:** Synchronous calculation and generation RPCs to `sim-character-generator` (`GenerateCharacter`, `GenerateCohort`), `sim-dna` (`SynthesizeFounderGenome`), `sim-prenatal-loss`, `sim-birth-date`, `sim-egg-selection`, `sim-menarche`, and `sim-mortality`.
+- **Direct Simulation & Temporal History Queries:** Synchronous RPCs to `character-registry` (`GetCharacterStateAtSimTick`, `ValidateFemaleBiologicalWindow`, `ClaimNpcOwnership`, `ActivateGroupNpc`), `sim-character-generator` (`GenerateCharacter`, `GenerateCohort`), `sim-dna` (`SynthesizeFounderGenome`), `sim-prenatal-loss`, `sim-birth-date`, `sim-egg-selection`, `sim-menarche`, and `sim-mortality`.
 
 Because every microservice is independently versioned and deployed (Concept §3.5), internal API contracts must enforce strict backward compatibility, prevent accidental breaking changes, and minimize boilerplate across 25+ Go services.
 
@@ -45,7 +45,7 @@ libs/proto/
 ```
 
 - **Standardized Attribute Contract (`princesspink.attribute.v1`):** Implements the uniform `AttributeCalculator.Calculate(CalculateRequest) returns (CalculateResponse)` RPC defined in Concept §4.3, carrying `schema_version` and `service_version` on every response.
-- **Domain Event Payloads:** Canonical asynchronous event payloads published on NATS JetStream (e.g., `sim.tick.advanced`, `sim.character.generated`, `sim.conception.occurred`, `sim.dna.calculated`) are also defined in `libs/proto` as Protobuf messages (serialized as Protobuf binary or ProtoJSON) so async schemas benefit from the same linting and breaking-change guarantees.
+- **Domain Event Payloads:** Canonical asynchronous event payloads published on NATS JetStream (e.g., `sim.tick.advanced`, `sim.character.generated`, `sim.conception.occurred`, `sim.dna.calculated`, `character.history.appended`, `character.life.completed`, `character.reappearance.activated`, `character.ownership.claimed`) are also defined in `libs/proto` as Protobuf messages (serialized as Protobuf binary or ProtoJSON) so async schemas benefit from the same linting and breaking-change guarantees.
 
 ### 2. Code Generation & Compatibility Governance (`buf`)
 
