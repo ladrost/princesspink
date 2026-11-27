@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-11-22
 - **Deciders:** PrincessPink Architecture
-- **Related Documents:** [`docs/Concept.md`](../Concept.md), [`README.md`](../../README.md), [`Makefile`](../../Makefile), [`ADR-0002`](ADR-0002-world-chat-microservices-and-server-selection.md), [`ADR-0004`](ADR-0004-shared-opentelemetry-observability.md), [`ADR-0008`](ADR-0008-multi-module-makefile-build-automation.md), [`ADR-0012`](ADR-0012-private-subnet-isolation-and-encrypted-cloud-communication.md)
+- **Related Documents:** [`docs/Concept.md`](../Concept.md), [`README.md`](../../README.md), [`Makefile`](../../Makefile), [`ADR-0002`](ADR-0002-world-chat-microservices-and-server-selection.md), [`ADR-0004`](ADR-0004-shared-opentelemetry-observability.md), [`ADR-0008`](ADR-0008-multi-module-makefile-build-automation.md), [`ADR-0012`](ADR-0012-private-subnet-isolation-and-encrypted-cloud-communication.md), [`ADR-0013`](ADR-0013-static-website-service-and-public-results-presentation.md)
 
 ---
 
@@ -12,7 +12,8 @@
 PrincessPink's microservices rely heavily on low-latency, strongly typed synchronous internal RPCs (Concept §3.4 & §4.3):
 
 - **High Fan-Out Character Sheet Aggregation:** `sheet-aggregator` invokes `character-registry` and 15+ dedicated `attr-*` microservices concurrently via Go `errgroup` with strict per-call deadlines.
-- **Authorization & Group Rules:** `frontend-gateway`, `sheet-aggregator`, `character-registry`, `sim-roleplay`, `gamification-service`, and `chat-service` query `user-admin` to verify Player/Game Master roles, single-character-per-group selections (including point-in-time era liveness), owning-Player vs. GM unowned-NPC activation (`ActivateGroupNpc`), GM-only role-play event authorization (including `FEMALE_ORGASM` [`CLITORAL` | `VAGINAL`], `ACCIDENTAL_PREMATURE_EJACULATION`, `BROKEN_CONDOM`, `FORGOTTEN_CONTRACEPTION_PILL`), `REPLAY_IMMUTABLE` write denial, atomic `ClaimNpcOwnership`, and child ownership rules.
+- **Authorization & Group Rules:** `frontend-gateway`, `website-service`, `sheet-aggregator`, `character-registry`, `sim-roleplay`, `gamification-service`, and `chat-service` query `user-admin` to verify Player/Game Master/`SYSTEM_ADMIN` roles (including mandatory MFA for `SYSTEM_ADMIN` static website operations), single-character-per-group selections (including point-in-time era liveness), owning-Player vs. GM unowned-NPC activation (`ActivateGroupNpc`), GM-only role-play event authorization (including `FEMALE_ORGASM` [`CLITORAL` | `VAGINAL`], `ACCIDENTAL_PREMATURE_EJACULATION`, `BROKEN_CONDOM`, `FORGOTTEN_CONTRACEPTION_PILL`), `REPLAY_IMMUTABLE` write denial, atomic `ClaimNpcOwnership`, and child ownership rules.
+- **Static Website & Public Service Results Showcase ([ADR-0013](ADR-0013-static-website-service-and-public-results-presentation.md)):** `frontend-website` calls `website-service` (`GetPublishedPage`, `ListPages`, `SavePageDraft`, `PublishPageRevision`, `RollbackPageRevision`, `GetPublicShowcaseData`), and `website-service` fans out over read-only public-summary RPCs to `chat-world-registry`, `gamification-service`, `character-registry`, and `sim-clock` to render public service results natively without external CMS tools.
 - **Real-Time Chat Control & Streaming:** `frontend-chat`, `chat-service`, and `chat-world-registry` exchange World Chat Server listings, occupancy heartbeats, `SwitchWorldServer` commands, and message streams ([ADR-0002](ADR-0002-world-chat-microservices-and-server-selection.md)).
 - **Direct Simulation, Role-Play, Gamification & Temporal History Queries:** Synchronous RPCs to `character-registry` (`GetCharacterStateAtSimTick`, `ValidateFemaleBiologicalWindow`, `ClaimNpcOwnership`, `ActivateGroupNpc`), `sim-character-generator` (`GenerateCharacter`, `GenerateCohort`), `sim-roleplay` (`TriggerGmRoleplayEvent`, `PreviewRoleplayEventPreconditions`, `ResolveTabletopCheck`), `gamification-service` (`GetDynastyChronicle`, `GetGeneticCodex`, `GetGroupChallenges`, `GenerateDynastyAlmanac`), `sim-dna` (`SynthesizeFounderGenome`), `sim-prenatal-loss`, `sim-birth-date`, `sim-egg-selection`, `sim-menarche`, and `sim-mortality`.
 
@@ -36,7 +37,8 @@ libs/proto/
 ├── princesspink/
 │   ├── common/v1/          # Shared types: UUID, SimTick, ServiceVersion, ErrorDetail, PaginationCursor
 │   ├── attribute/v1/       # Standardized AttributeCalculator (CalculateRequest / CalculateResponse)
-│   ├── useradmin/v1/       # Auth validation, RBAC & Group membership checks
+│   ├── useradmin/v1/       # Auth validation, RBAC (PLAYER/GAME_MASTER/SYSTEM_ADMIN) & Group membership checks
+│   ├── website/v1/         # website-service static page publishing, immutable revisions, rollback & public service results showcase
 │   ├── character/v1/       # character-registry & sheet-aggregator contracts
 │   ├── chat/v1/            # chat-service & chat-world-registry (ListWorldServers, SwitchWorldServer, SendMessage)
 │   └── simulation/v1/      # Synchronous sim-* RPCs & shared domain event envelope schemas
@@ -45,7 +47,7 @@ libs/proto/
 ```
 
 - **Standardized Attribute Contract (`princesspink.attribute.v1`):** Implements the uniform `AttributeCalculator.Calculate(CalculateRequest) returns (CalculateResponse)` RPC defined in Concept §4.3, carrying `schema_version` and `service_version` on every response.
-- **Domain Event Payloads:** Canonical asynchronous event payloads published on NATS JetStream (e.g., `sim.tick.advanced`, `sim.character.generated`, `sim.gamete_surface.matched`, `sim.conception.occurred`, `sim.dna.calculated`, `character.history.appended`, `character.life.completed`, `character.reappearance.activated`, `character.ownership.claimed`, `roleplay.event.triggered`, `roleplay.encounter.started`, `roleplay.orgasm.recorded`, `roleplay.contraception.lapsed`, `roleplay.check.resolved`, `gamification.milestone.unlocked`, `gamification.codex.discovered`, `gamification.challenge.updated`) are also defined in `libs/proto` as Protobuf messages (serialized as Protobuf binary or ProtoJSON) so async schemas benefit from the same linting and breaking-change guarantees.
+- **Domain Event Payloads:** Canonical asynchronous event payloads published on NATS JetStream (e.g., `sim.tick.advanced`, `sim.character.generated`, `sim.gamete_surface.matched`, `sim.conception.occurred`, `sim.dna.calculated`, `character.history.appended`, `character.life.completed`, `character.reappearance.activated`, `character.ownership.claimed`, `roleplay.event.triggered`, `roleplay.encounter.started`, `roleplay.orgasm.recorded`, `roleplay.contraception.lapsed`, `roleplay.check.resolved`, `gamification.milestone.unlocked`, `gamification.codex.discovered`, `gamification.challenge.updated`, `website.page.published`, `website.page.rolled_back`, `website.public_results.refreshed`) are also defined in `libs/proto` as Protobuf messages (serialized as Protobuf binary or ProtoJSON) so async schemas benefit from the same linting and breaking-change guarantees.
 
 ### 2. Code Generation & Compatibility Governance (`buf`)
 

@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-11-27
 - **Deciders:** PrincessPink Architecture
-- **Related Documents:** [`docs/Concept.md`](../Concept.md), [`README.md`](../../README.md), [`AGENTS.md`](../../AGENTS.md), [`SECURITY.md`](../../SECURITY.md), [`CONTRIBUTING.md`](../../CONTRIBUTING.md), [`ADR-0001`](ADR-0001-minimum-postgresql-version.md), [`ADR-0002`](ADR-0002-world-chat-microservices-and-server-selection.md), [`ADR-0004`](ADR-0004-shared-opentelemetry-observability.md), [`ADR-0005`](ADR-0005-shared-grpc-protobuf-contracts.md), [`ADR-0006`](ADR-0006-shared-configuration-library.md), [`ADR-0009`](ADR-0009-github-actions-ci-cd.md), [`ADR-0010`](ADR-0010-user-admin-auth-rbac-and-group-management.md)
+- **Related Documents:** [`docs/Concept.md`](../Concept.md), [`README.md`](../../README.md), [`AGENTS.md`](../../AGENTS.md), [`SECURITY.md`](../../SECURITY.md), [`CONTRIBUTING.md`](../../CONTRIBUTING.md), [`ADR-0001`](ADR-0001-minimum-postgresql-version.md), [`ADR-0002`](ADR-0002-world-chat-microservices-and-server-selection.md), [`ADR-0004`](ADR-0004-shared-opentelemetry-observability.md), [`ADR-0005`](ADR-0005-shared-grpc-protobuf-contracts.md), [`ADR-0006`](ADR-0006-shared-configuration-library.md), [`ADR-0009`](ADR-0009-github-actions-ci-cd.md), [`ADR-0010`](ADR-0010-user-admin-auth-rbac-and-group-management.md), [`ADR-0013`](ADR-0013-static-website-service-and-public-results-presentation.md)
 
 ---
 
@@ -11,7 +11,7 @@
 
 PrincessPink runs 25+ independently versioned Go microservices on **Microsoft Azure Kubernetes Service (AKS)** alongside **Azure Database for PostgreSQL Flexible Server (18+)** ([ADR-0001](ADR-0001-minimum-postgresql-version.md)), an asynchronous event broker (**NATS JetStream** or **Azure Service Bus**), **Azure Key Vault**, **Azure Container Registry (ACR)**, **Azure Blob Storage** (for per-female Egg-Reserve and per-ejaculation SQLite artifacts), and **OpenTelemetry / Prometheus / Azure Monitor** ([ADR-0004](ADR-0004-shared-opentelemetry-observability.md)).
 
-In the **High-Level Architecture Diagram** ([`docs/Concept.md`](../Concept.md#32-high-level-architecture-diagram)) and **Kubernetes Cluster Topology** ([`docs/Concept.md`](../Concept.md#61-kubernetes-cluster-topology)), workloads are organized into clear functional Kubernetes namespaces (`frontend`, `user-admin`, `chat`, `character-sheet`, `simulation`, plus supporting `ingress`, `messaging`, and `observability` namespaces). While earlier specifications already required private VNet integration for PostgreSQL, default-deny Kubernetes `NetworkPolicy`, and TLS 1.3 / mTLS at key boundaries, three foundational cloud network-security rules must be formalized and enforced uniformly across infrastructure, shared libraries (`libs/`), microservices, and deployment manifests:
+In the **High-Level Architecture Diagram** ([`docs/Concept.md`](../Concept.md#32-high-level-architecture-diagram)) and **Kubernetes Cluster Topology** ([`docs/Concept.md`](../Concept.md#61-kubernetes-cluster-topology)), workloads are organized into clear functional Kubernetes namespaces (`frontend`, `website`, `user-admin`, `chat`, `character-sheet`, `simulation`, plus supporting `ingress`, `messaging`, and `observability` namespaces). While earlier specifications already required private VNet integration for PostgreSQL, default-deny Kubernetes `NetworkPolicy`, and TLS 1.3 / mTLS at key boundaries, three foundational cloud network-security rules must be formalized and enforced uniformly across infrastructure, shared libraries (`libs/`), microservices, and deployment manifests:
 
 1. **Private Network Placement for Backend Services:** Backend services handle sensitive identity credentials (`Argon2id` hashes, MFA secrets, Ed25519 JWT signing keys), private 1-to-1 Direct Messages, Group campaigns, and authoritative character/lineage records. Placing any backend service in a public subnet or assigning public IP addresses unnecessarily exposes internal RPC, broker, and management endpoints to the internet.
 2. **Defense-in-Depth Network Segmentation Beyond Logical Namespaces:** Deploying all Kubernetes namespaces into a single flat AKS subnet relies solely on in-cluster `NetworkPolicy` to separate distinct security domains (such as `frontend`, `user-admin`, `chat`, `character-sheet`, and `simulation`). Separating namespaces into dedicated VNet subnets adds a cloud-layer L3/L4 isolation boundary (Azure Network Security Groups and route tables) aligned 1:1 with the High-Level Architecture Diagram.
@@ -29,7 +29,7 @@ PrincessPink establishes three mandatory cloud networking and transport-security
 
 ### 1. Private / Non-Public Subnets for All Backend Services & Data Stores
 
-- **Zero Public Exposure for Backend Workloads:** Every PrincessPink backend namespace (`user-admin`, `chat`, `character-sheet`, `simulation`, `messaging`, `observability`)—as well as the `frontend` workload pods behind the edge ingress—resides strictly in **private / non-public Azure VNet subnets** (`no public IP addresses` on AKS nodes or pods, no public `LoadBalancer` or `NodePort` services, and no direct inbound internet routes), mirroring Azure Database for PostgreSQL Flexible Server in its dedicated delegated private subnet (`snet-postgresql`).
+- **Zero Public Exposure for Backend Workloads:** Every PrincessPink backend namespace (`website`, `user-admin`, `chat`, `character-sheet`, `simulation`, `messaging`, `observability`)—as well as the `frontend` workload pods behind the edge ingress—resides strictly in **private / non-public Azure VNet subnets** (`no public IP addresses` on AKS nodes or pods, no public `LoadBalancer` or `NodePort` services, and no direct inbound internet routes), mirroring Azure Database for PostgreSQL Flexible Server in its dedicated delegated private subnet (`snet-postgresql`).
 - **Sole Public Entry Point:** External browser traffic (`HTTPS` and `wss://`) enters exclusively through the public edge layer (**Azure Front Door** and the dedicated edge `ingress` subnet `snet-ingress` running the AKS Ingress Controller / Azure Application Gateway for Containers), which bridges solely into `snet-frontend` over encrypted connections.
 - **Private Azure PaaS & Control Plane:**
   - **Azure Database for PostgreSQL Flexible Server (18+):** Deployed with private VNet integration in its own delegated private subnet (`snet-postgresql`) with public network access disabled ([ADR-0001](ADR-0001-minimum-postgresql-version.md)).
@@ -43,11 +43,12 @@ Every Kubernetes namespace in the High-Level Architecture Diagram and Cluster To
 | Kubernetes Namespace / Cloud Domain | Services / Components Located in Subnet | Dedicated VNet Subnet | Network Exposure |
 | :--- | :--- | :--- | :--- |
 | **`ingress`** | AKS Ingress Controller / Azure Application Gateway for Containers (behind Azure Front Door) | `snet-ingress` | Dedicated edge subnet (sole bridge from public edge to `snet-frontend`) |
-| **`frontend`** | `frontend-gateway`, `frontend-sheets`, `frontend-gm`, `frontend-chat`, `portrait-renderer` | `snet-frontend` | **Private / Non-Public** |
+| **`frontend`** | `frontend-gateway`, `frontend-website`, `frontend-sheets`, `frontend-gm`, `frontend-chat`, `portrait-renderer` | `snet-frontend` | **Private / Non-Public** |
+| **`website`** | `website-service` ([ADR-0013](ADR-0013-static-website-service-and-public-results-presentation.md)) | `snet-website` | **Private / Non-Public** |
 | **`user-admin`** | `user-admin` | `snet-user-admin` | **Private / Non-Public** |
 | **`chat`** | `chat-service`, `chat-world-registry` | `snet-chat` | **Private / Non-Public** |
-| **`character-sheet`** | `character-registry`, `sheet-aggregator`, all `attr-*` microservices | `snet-character-sheet` | **Private / Non-Public** |
-| **`simulation`** | `sim-clock`, `sim-character-generator`, `sim-egg-reserve`, `sim-egg-selection`, `sim-menarche`, `sim-menstruation`, `sim-ejaculation`, `sim-sperm-race`, `sim-gamete-surface`, `sim-conception`, `sim-dna`, `sim-prenatal-loss`, `sim-birth-date`, `sim-gestation`, `sim-health`, `sim-mortality`, `sim-lifecycle` | `snet-simulation` | **Private / Non-Public** |
+| **`character-sheet`** | `character-registry`, `sheet-aggregator`, `gamification-service`, all `attr-*` microservices | `snet-character-sheet` | **Private / Non-Public** |
+| **`simulation`** | `sim-clock`, `sim-character-generator`, `sim-roleplay`, `sim-egg-reserve`, `sim-egg-selection`, `sim-menarche`, `sim-menstruation`, `sim-ejaculation`, `sim-sperm-race`, `sim-gamete-surface`, `sim-conception`, `sim-dna`, `sim-prenatal-loss`, `sim-birth-date`, `sim-gestation`, `sim-health`, `sim-mortality`, `sim-lifecycle` | `snet-simulation` | **Private / Non-Public** |
 | **`messaging`** | Event Bus / NATS JetStream cluster (if run in-cluster) | `snet-messaging` | **Private / Non-Public** |
 | **`observability`** | OpenTelemetry Collector, Prometheus, Grafana / Azure Monitor agents | `snet-observability` | **Private / Non-Public** |
 | **`kube-system` (AKS System Pool)** | CoreDNS, Cilium / service-mesh control plane, `cert-manager`, Secrets Store CSI Driver | `snet-aks-system` | **Private / Non-Public** |
@@ -56,7 +57,7 @@ Every Kubernetes namespace in the High-Level Architecture Diagram and Cluster To
 
 #### How AKS Realizes 1:1 Namespace-to-Subnet Isolation
 
-1. **Azure CNI with Per-Namespace Private Subnets:** AKS runs **Azure CNI** (Azure CNI Powered by Cilium or Azure CNI Dynamic IP Allocation with pod subnets) with dedicated user node pools / pod subnets (`--vnet-subnet-id` / `--pod-subnet-id`) mapped 1:1 to each namespace's private subnet (`snet-frontend`, `snet-user-admin`, `snet-chat`, `snet-character-sheet`, `snet-simulation`, `snet-messaging`, `snet-observability`, and `snet-ingress`).
+1. **Azure CNI with Per-Namespace Private Subnets:** AKS runs **Azure CNI** (Azure CNI Powered by Cilium or Azure CNI Dynamic IP Allocation with pod subnets) with dedicated user node pools / pod subnets (`--vnet-subnet-id` / `--pod-subnet-id`) mapped 1:1 to each namespace's private subnet (`snet-frontend`, `snet-website`, `snet-user-admin`, `snet-chat`, `snet-character-sheet`, `snet-simulation`, `snet-messaging`, `snet-observability`, and `snet-ingress`).
 2. **Mandatory Pod-to-Subnet Placement Enforcement:** Each namespace node pool carries a dedicated node label and taint (e.g., `princesspink.io/namespace=<ns>:NoSchedule`). Admission enforcement (Kyverno / OPA Gatekeeper / `PodNodeSelector`) guarantees that pods in namespace `<ns>` schedule **exclusively** onto the node pool backed by `snet-<ns>`, ensuring services in the same namespace always share a subnet and services in different namespaces can never co-locate in the same subnet.
 3. **Dual-Layer Filtering (Azure NSGs + Kubernetes `NetworkPolicy`):**
    - **Cloud Layer (L3/L4):** Each private subnet attaches a dedicated **Azure Network Security Group (NSG)** with default-deny inter-subnet rules and explicit allow-lists strictly for required encrypted cross-subnet flows.
@@ -67,7 +68,8 @@ Every Kubernetes namespace in the High-Level Architecture Diagram and Cluster To
 | Source Subnet (Namespace) | Permitted Destination Subnets | Protocol & Mandatory Encryption |
 | :--- | :--- | :--- |
 | `snet-ingress` (`ingress`) | `snet-frontend`, `snet-observability`, `snet-private-endpoints` | HTTPS / `wss://` (TLS 1.3 / mTLS re-encryption; zero plaintext HTTP), OTLP TLS 1.3/mTLS, Key Vault TLS 1.3 |
-| `snet-frontend` (`frontend`) | `snet-user-admin`, `snet-chat`, `snet-character-sheet`, `snet-simulation`, `snet-observability`, `snet-private-endpoints` | gRPC mTLS (TLS 1.3), OTLP/gRPC TLS 1.3/mTLS, HTTPS TLS 1.3 |
+| `snet-frontend` (`frontend`) | `snet-website`, `snet-user-admin`, `snet-chat`, `snet-character-sheet`, `snet-simulation`, `snet-observability`, `snet-private-endpoints` | gRPC mTLS (TLS 1.3), OTLP/gRPC TLS 1.3/mTLS, HTTPS TLS 1.3 *(zero direct route to `snet-postgresql`)* |
+| `snet-website` (`website`) | `snet-user-admin`, `snet-chat`, `snet-character-sheet`, `snet-simulation`, `snet-postgresql`, `snet-messaging`, `snet-observability`, `snet-private-endpoints` | gRPC mTLS (read-only public-summary & `SYSTEM_ADMIN` auth), PostgreSQL TLS 1.3 (`verify-full`), NATS TLS 1.3/mTLS, OTLP TLS 1.3/mTLS, HTTPS TLS 1.3 |
 | `snet-user-admin` (`user-admin`) | `snet-character-sheet`, `snet-postgresql`, `snet-messaging`, `snet-observability`, `snet-private-endpoints` | gRPC mTLS, PostgreSQL TLS 1.3 (`verify-full`), NATS TLS 1.3/mTLS, OTLP TLS 1.3/mTLS, HTTPS TLS 1.3 |
 | `snet-chat` (`chat`) | `snet-user-admin`, `snet-postgresql`, `snet-messaging`, `snet-observability`, `snet-private-endpoints` | gRPC mTLS, PostgreSQL TLS 1.3 (`verify-full`), NATS TLS 1.3/mTLS, OTLP TLS 1.3/mTLS, HTTPS TLS 1.3 |
 | `snet-character-sheet` (`character-sheet`) | `snet-user-admin`, `snet-simulation`, `snet-postgresql`, `snet-messaging`, `snet-observability`, `snet-private-endpoints` | gRPC mTLS, PostgreSQL TLS 1.3 (`verify-full`), NATS TLS 1.3/mTLS, OTLP TLS 1.3/mTLS, HTTPS TLS 1.3 |
@@ -79,7 +81,7 @@ Every Kubernetes namespace in the High-Level Architecture Diagram and Cluster To
 
 ```mermaid
 flowchart TB
-    Browser[Web Browser / Player & GM] -->|HTTPS / wss TLS 1.3| Edge[Azure Front Door]
+    Browser[Web Browser / Visitor, Player, GM & System Admin] -->|HTTPS / wss TLS 1.3| Edge[Azure Front Door]
 
     subgraph VNet["Azure Virtual Network (Private Cloud Network — All Traffic Encrypted: TLS 1.3 / mTLS)"]
         subgraph SubIngress["Subnet: snet-ingress (Namespace: ingress)"]
@@ -87,7 +89,11 @@ flowchart TB
         end
 
         subgraph SubFrontend["Private Subnet: snet-frontend (Namespace: frontend)"]
-            Frontend[frontend-gateway, frontend-sheets, frontend-gm, frontend-chat, portrait-renderer]
+            Frontend[frontend-gateway, frontend-website, frontend-sheets, frontend-gm, frontend-chat, portrait-renderer]
+        end
+
+        subgraph SubWebsite["Private Subnet: snet-website (Namespace: website)"]
+            Website[website-service]
         end
 
         subgraph SubUserAdmin["Private Subnet: snet-user-admin (Namespace: user-admin)"]
@@ -125,27 +131,35 @@ flowchart TB
 
     Edge -->|TLS 1.3| Ingress
     Ingress -->|TLS 1.3 / mTLS| Frontend
+    Frontend -->|mTLS gRPC| Website
     Frontend -->|mTLS gRPC| UserAdmin
     Frontend -->|mTLS gRPC| Chat
     Frontend -->|mTLS gRPC| Sheet
     Frontend -->|mTLS gRPC| Sim
+    Website -->|mTLS gRPC| UserAdmin
+    Website -->|mTLS gRPC| Chat
+    Website -->|mTLS gRPC| Sheet
+    Website -->|mTLS gRPC| Sim
     Chat -->|mTLS gRPC| UserAdmin
     Sheet -->|mTLS gRPC| UserAdmin
     Sheet -->|mTLS gRPC| Sim
     Sim -->|mTLS gRPC| UserAdmin
     Sim -->|mTLS gRPC| Sheet
 
+    Website -->|TLS 1.3 verify-full| PG
     UserAdmin -->|TLS 1.3 verify-full| PG
     Chat -->|TLS 1.3 verify-full| PG
     Sheet -->|TLS 1.3 verify-full| PG
     Sim -->|TLS 1.3 verify-full| PG
 
+    Website <-->|TLS 1.3 / mTLS| NATS
     UserAdmin <-->|TLS 1.3 / mTLS| NATS
     Chat <-->|TLS 1.3 / mTLS| NATS
     Sheet <-->|TLS 1.3 / mTLS| NATS
     Sim <-->|TLS 1.3 / mTLS| NATS
 
     Frontend -.->|OTLP / Metrics TLS 1.3 mTLS| Obs
+    Website -.->|OTLP / Metrics TLS 1.3 mTLS| Obs
     UserAdmin -.->|OTLP / Metrics TLS 1.3 mTLS| Obs
     Chat -.->|OTLP / Metrics TLS 1.3 mTLS| Obs
     Sheet -.->|OTLP / Metrics TLS 1.3 mTLS| Obs
@@ -190,11 +204,11 @@ Every communication channel—both external and **every internal hop within the 
 ## Rationale & Alignment with PrincessPink Requirements
 
 1. **Direct Alignment with the High-Level Architecture Diagram (Concept §3.2 & §6.1):**
-   Mapping each namespace (`frontend`, `user-admin`, `chat`, `character-sheet`, `simulation`, plus `ingress`, `messaging`, `observability`) 1:1 to its own private subnet guarantees that cloud network boundaries mirror logical domain boundaries exactly—services in the same namespace co-locate in the same subnet, while services in different namespaces always reside in separate subnets.
+   Mapping each namespace (`frontend`, `website`, `user-admin`, `chat`, `character-sheet`, `simulation`, plus `ingress`, `messaging`, `observability`) 1:1 to its own private subnet guarantees that cloud network boundaries mirror logical domain boundaries exactly—services in the same namespace co-locate in the same subnet, while services in different namespaces always reside in separate subnets.
 2. **True Defense in Depth for Sensitive Identity, Chat & Simulation Data (Concept §4.2, §6.3 & [ADR-0010](ADR-0010-user-admin-auth-rbac-and-group-management.md)):**
    Combining private / non-public subnets, per-subnet Azure NSGs, default-deny Kubernetes `NetworkPolicy`, and mandatory TLS 1.3 / mTLS ensures that even if a single layer is misconfigured (e.g., an overly permissive `NetworkPolicy` or a compromised frontend pod), both cloud-level subnet rules and cryptographic mTLS identity verification still block unauthorized access and eavesdropping.
 3. **Uniform Private Posture Across Compute and Data (Concept §5.1, §6.2 & [ADR-0001](ADR-0001-minimum-postgresql-version.md)):**
-   Treating all backend microservices (`user-admin`, `chat`, `character-sheet`, `simulation`, `messaging`, `observability`) with the exact same private-subnet isolation discipline as Azure Database for PostgreSQL Flexible Server eliminates asymmetric attack surfaces between compute and storage tiers.
+   Treating all backend microservices (`website`, `user-admin`, `chat`, `character-sheet`, `simulation`, `messaging`, `observability`) with the exact same private-subnet isolation discipline as Azure Database for PostgreSQL Flexible Server eliminates asymmetric attack surfaces between compute and storage tiers.
 4. **Zero Plaintext Blind Spots Across Shared Platform Libraries ([ADR-0004](ADR-0004-shared-opentelemetry-observability.md)–[ADR-0006](ADR-0006-shared-configuration-library.md)):**
    Embedding encryption enforcement directly into `libs/proto/grpcutil`, `libs/telemetry`, and `libs/config` guarantees that every new `attr-*` or `sim-*` microservice inherits encrypted cloud communication automatically without per-service boilerplate.
 
@@ -204,7 +218,7 @@ Every communication channel—both external and **every internal hop within the 
 
 ### Positive
 - **Zero Public Attack Surface on Backend Tiers:** No backend microservice, event broker, observability collector, or PostgreSQL instance is reachable from the public internet.
-- **Strict Blast-Radius Containment per Domain:** Cloud-layer subnet + NSG boundaries isolate `frontend`, `user-admin`, `chat`, `character-sheet`, `simulation`, `messaging`, `observability`, and `postgresql` independently.
+- **Strict Blast-Radius Containment per Domain:** Cloud-layer subnet + NSG boundaries isolate `frontend`, `website`, `user-admin`, `chat`, `character-sheet`, `simulation`, `messaging`, `observability`, and `postgresql` independently.
 - **End-to-End Confidentiality & Authenticity in the Cloud:** Every network hop—ingress-to-frontend, gRPC fan-out, NATS JetStream pub/sub, PostgreSQL queries, OTLP traces, Prometheus scrapes, and Azure PaaS storage—is cryptographically protected with TLS 1.3 / mTLS.
 - **Auditability & Infrastructure-as-Code Clarity:** Subnet CIDRs, NSG flow logs, and Terraform/Bicep modules map cleanly 1:1 onto the namespaces shown in the High-Level Architecture Diagram.
 
