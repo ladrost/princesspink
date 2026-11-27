@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-11-22
 - **Deciders:** PrincessPink Architecture
-- **Related Documents:** [`docs/Concept.md`](../Concept.md), [`README.md`](../../README.md), [`ADR-0001`](ADR-0001-minimum-postgresql-version.md), [`ADR-0003`](ADR-0003-shared-logging-library.md), [`ADR-0004`](ADR-0004-shared-opentelemetry-observability.md), [`ADR-0005`](ADR-0005-shared-grpc-protobuf-contracts.md), [`ADR-0006`](ADR-0006-shared-configuration-library.md), [`ADR-0007`](ADR-0007-shared-uuid-utilities.md), [`ADR-0008`](ADR-0008-multi-module-makefile-build-automation.md), [`ADR-0009`](ADR-0009-github-actions-ci-cd.md)
+- **Related Documents:** [`docs/Concept.md`](../Concept.md), [`README.md`](../../README.md), [`ADR-0001`](ADR-0001-minimum-postgresql-version.md), [`ADR-0003`](ADR-0003-shared-logging-library.md), [`ADR-0004`](ADR-0004-shared-opentelemetry-observability.md), [`ADR-0005`](ADR-0005-shared-grpc-protobuf-contracts.md), [`ADR-0006`](ADR-0006-shared-configuration-library.md), [`ADR-0007`](ADR-0007-shared-uuid-utilities.md), [`ADR-0008`](ADR-0008-multi-module-makefile-build-automation.md), [`ADR-0009`](ADR-0009-github-actions-ci-cd.md), [`ADR-0012`](ADR-0012-private-subnet-isolation-and-encrypted-cloud-communication.md)
 
 ---
 
@@ -28,7 +28,7 @@ PrincessPink implements **`user-admin`** as an independently versioned **Go 1.27
 
 ### 1. Service Architecture & Internal Interfaces
 
-`user-admin` is deployed in the dedicated **`user-admin` AKS namespace** as a stateless, horizontally scalable `Deployment` (`distroless/static` non-root container, read-only root filesystem, `CGO_ENABLED=0`) with zero direct public internet exposure—all browser traffic enters via `frontend-gateway` (TLS 1.3) and reaches `user-admin` over internal mTLS gRPC.
+`user-admin` is deployed in the dedicated **`user-admin` AKS namespace** inside its own **private / non-public Azure VNet subnet (`snet-user-admin`)**—strictly isolated from other namespaces' subnets per [ADR-0012](ADR-0012-private-subnet-isolation-and-encrypted-cloud-communication.md)—as a stateless, horizontally scalable `Deployment` (`distroless/static` non-root container, read-only root filesystem, `CGO_ENABLED=0`) with zero direct public internet exposure. All browser traffic enters via Azure Front Door / `snet-ingress` → `frontend-gateway` (`snet-frontend`, TLS 1.3 / mTLS) and reaches `user-admin` over mandatory mTLS (TLS 1.3) gRPC; all outbound calls from `user-admin` to PostgreSQL 18+ (`snet-postgresql`, `sslmode=verify-full`), NATS JetStream (`snet-messaging`, TLS 1.3 / mTLS), `character-registry` (`snet-character-sheet`, mTLS gRPC), observability (`snet-observability`, TLS 1.3 / mTLS), and Key Vault (`snet-private-endpoints`, TLS 1.3) are strictly encrypted.
 
 - **Shared Platform Modules:** Bootstraps structured non-PII JSON logging (`libs/logging`, [ADR-0003](ADR-0003-shared-logging-library.md)), OpenTelemetry tracing, Prometheus metrics, and `/healthz` + `/readyz` probes (`libs/telemetry`, [ADR-0004](ADR-0004-shared-opentelemetry-observability.md)), 12-Factor env + `*_FILE` Azure Key Vault CSI secrets (`libs/config`, [ADR-0006](ADR-0006-shared-configuration-library.md)), and RFC 9562 UUIDv7 entity IDs (`libs/uuid`, [ADR-0007](ADR-0007-shared-uuid-utilities.md)).
 - **Internal gRPC Surface (`libs/proto/useradmin/v1`):**

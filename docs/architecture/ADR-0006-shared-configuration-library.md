@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-11-22
 - **Deciders:** PrincessPink Architecture
-- **Related Documents:** [`docs/Concept.md`](../Concept.md), [`README.md`](../../README.md), [`ADR-0001`](ADR-0001-minimum-postgresql-version.md), [`ADR-0003`](ADR-0003-shared-logging-library.md), [`ADR-0004`](ADR-0004-shared-opentelemetry-observability.md)
+- **Related Documents:** [`docs/Concept.md`](../Concept.md), [`README.md`](../../README.md), [`ADR-0001`](ADR-0001-minimum-postgresql-version.md), [`ADR-0003`](ADR-0003-shared-logging-library.md), [`ADR-0004`](ADR-0004-shared-opentelemetry-observability.md), [`ADR-0012`](ADR-0012-private-subnet-isolation-and-encrypted-cloud-communication.md)
 
 ---
 
@@ -31,8 +31,8 @@ PrincessPink establishes a shared Go module **`libs/config`** implementing a **1
 
 ### 2. Fail-Fast Validation & Safe Redaction
 
-- **Startup Validation:** `config.Load[T](ctx)` validates all required fields, port ranges, URLs, positive timeouts, and enum values (`ENVIRONMENT`, `LOG_LEVEL`) before the service opens network listeners. Invalid configuration exits immediately with a clear, non-secret error message so Kubernetes surfaces misconfigurations during rollout.
-- **PostgreSQL 18+ Guardrails ([ADR-0001](ADR-0001-minimum-postgresql-version.md)):** `PostgresConfig` enforces TLS (`sslmode=verify-full` in `staging`/`prod`), supports Microsoft Entra ID token auth alongside DSN credentials, and explicitly avoids `io_uring` settings incompatible with Azure Flexible Server.
+- **Startup Validation & Cloud Encryption Guardrails ([ADR-0012](ADR-0012-private-subnet-isolation-and-encrypted-cloud-communication.md)):** `config.Load[T](ctx)` validates all required fields, port ranges, URLs, positive timeouts, and enum values (`ENVIRONMENT`, `LOG_LEVEL`) before the service opens network listeners—and **fails fast** in all cloud environments (`dev`, `staging`, `prod`) if TLS 1.3 / mTLS is disabled or insecure flags are supplied on `ServerConfig`, `PostgresConfig`, `NATSConfig`, or `TelemetryConfig`. Invalid configuration exits immediately with a clear, non-secret error message so Kubernetes surfaces misconfigurations during rollout.
+- **PostgreSQL 18+ Guardrails ([ADR-0001](ADR-0001-minimum-postgresql-version.md), [ADR-0012](ADR-0012-private-subnet-isolation-and-encrypted-cloud-communication.md)):** `PostgresConfig` enforces TLS 1.3 (`sslmode=verify-full` across all cloud environments `dev`/`staging`/`prod`), supports Microsoft Entra ID token auth alongside DSN credentials over the private `snet-postgresql` subnet, and explicitly avoids `io_uring` settings incompatible with Azure Flexible Server.
 - **Secret-Safe `slog.LogValuer`:** Sensitive fields use a `config.Secret` wrapper type whose `String()`, `MarshalJSON()`, and `LogValue()` methods always return `"[REDACTED]"`, preventing accidental secret leakage in startup logs or panic dumps.
 
 ### 3. Build Metadata & Scientific Parameter Boundary

@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-11-21
 - **Deciders:** PrincessPink Architecture
-- **Related Documents:** [`docs/Concept.md`](../Concept.md), [`README.md`](../../README.md)
+- **Related Documents:** [`docs/Concept.md`](../Concept.md), [`README.md`](../../README.md), [`ADR-0012`](ADR-0012-private-subnet-isolation-and-encrypted-cloud-communication.md)
 
 ---
 
@@ -52,8 +52,8 @@ Status verified as of **November 2026** against the PostgreSQL community version
 
 1. **UUID-Everywhere Data Model & Cursor Pagination (`uuidv7()`):**
    Every core entity (`USER`, `GROUP`, `CHARACTER`, `CHARACTER_ATTRIBUTE_HISTORY`, `GROUP_CHARACTER_PARTICIPATION`, `NPC_OWNERSHIP_CLAIM`, `CHARACTER_GENERATION_RECORD`, `PREGNANCY`, `CHAT_CHANNEL`, `CHAT_MESSAGE`, `MENSTRUATION_CYCLE`, `LIFECYCLE_EVENT`, outbox entries, and audit logs) uses `UUID` primary keys. PostgreSQL 18 introduces native RFC 9562 **`uuidv7()`** in core without requiring external extensions. Time-ordered UUIDv7 keys dramatically improve B-tree index locality, reduce page splits on append-heavy tables (`character_attribute_history`, `chat.*` messages, audit logs, outbox), and simplify cursor-based pagination.
-2. **State-of-the-Art Security Posture (Concept §4.2 & §6.2):**
-   PostgreSQL 18 aligns with PrincessPink's security requirements: MD5 authentication is deprecated in favor of `SCRAM-SHA-256`, native OAuth 2.0 authentication is supported, TLS 1.3 cipher handling is hardened, and data checksums are enabled by default. On Azure Flexible Server, PostgreSQL 18 has full GA support for Microsoft Entra ID authentication and private VNet integration.
+2. **State-of-the-Art Security Posture (Concept §4.2, §6.2 & [ADR-0012](ADR-0012-private-subnet-isolation-and-encrypted-cloud-communication.md)):**
+   PostgreSQL 18 aligns with PrincessPink's security requirements: MD5 authentication is deprecated in favor of `SCRAM-SHA-256`, native OAuth 2.0 authentication is supported, TLS 1.3 cipher handling is hardened, and data checksums are enabled by default. On Azure Flexible Server, PostgreSQL 18 has full GA support for Microsoft Entra ID authentication and deployment in a dedicated delegated private / non-public VNet subnet (`snet-postgresql`, with public access disabled and mandatory TLS 1.3 `sslmode=verify-full`), matching PrincessPink's private per-namespace subnet and end-to-end encrypted cloud communication model ([ADR-0012](ADR-0012-private-subnet-isolation-and-encrypted-cloud-communication.md)).
 3. **Audit Logging, Immutable History, Outbox & Composite Query Performance:**
    - `OLD` / `NEW` support in `RETURNING` clauses enables atomic before/after capture for immutable audit trails (`user_admin.*`, `chat.*`) and race-free atomic `NPC_OWNERSHIP_CLAIM` transfers (`UPDATE ... WHERE owner_user_id IS NULL RETURNING OLD, NEW`) in a single round trip.
    - **B-tree skip scans** improve query efficiency on composite indexes (e.g., `(character_id, attribute_key, effective_at_sim DESC)` for point-in-time "as-of `T_sim`" character state reconstruction in `CHARACTER_ATTRIBUTE_HISTORY`, and `(group_id, sent_at)` or `(channel_id, id)` in `chat.*`).

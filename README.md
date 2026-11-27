@@ -61,13 +61,13 @@ PrincessPink enforces a strict, non-negotiable **zero-violence, zero-nudity** po
 | :--- | :--- |
 | **Language & Workspace** | Go 1.27+ as sole programming language (`go.work` multi-module workspace, `toolchain go1.27.4`, independent semantic versioning per service; [ADR-0011](docs/architecture/ADR-0011-go-as-sole-programming-language.md)) |
 | **Frontend Microservices** | Go + **Gin** HTTP framework (`frontend-gateway`, `frontend-sheets`, `frontend-gm`, `frontend-chat`, `portrait-renderer`) with server-rendered HTML/HTMX and authenticated WebSockets (`wss://`) |
-| **Internal Communication** | **gRPC / Protocol Buffers** (`libs/proto`, [ADR-0005](docs/architecture/ADR-0005-shared-grpc-protobuf-contracts.md)) for synchronous RPC & parallel attribute fan-out; **NATS JetStream** (or Azure Service Bus) for simulation ticks, lifecycle events, and chat pub/sub |
+| **Internal Communication** | **gRPC / Protocol Buffers** (`libs/proto`, [ADR-0005](docs/architecture/ADR-0005-shared-grpc-protobuf-contracts.md)) over mandatory **mTLS (TLS 1.3)** for synchronous RPC & parallel attribute fan-out; encrypted **NATS JetStream** (TLS 1.3 / mTLS) or Azure Service Bus (Private Endpoint) for simulation ticks, lifecycle events, and chat pub/sub — **all cloud communication happens encrypted** ([ADR-0012](docs/architecture/ADR-0012-private-subnet-isolation-and-encrypted-cloud-communication.md)) |
 | **User Administration & Security** | `user-admin` backed by **PostgreSQL 18+** with `Argon2id` password hashing, MFA (TOTP / WebAuthn), RBAC (`PLAYER` / `GAME_MASTER`), TLS 1.3 / mTLS, and immutable audit logging ([ADR-0010](docs/architecture/ADR-0010-user-admin-auth-rbac-and-group-management.md)) |
 | **Character Sheet & Attributes** | `character-registry`, `sheet-aggregator` (concurrent `errgroup` fan-out with graceful degradation and tick-based caching), and dedicated `attr-*` microservices |
 | **Simulation & Genetics Engine** | Event-driven Go microservices (`sim-clock`, `sim-character-generator`, `sim-egg-reserve`, `sim-egg-selection`, `sim-menarche`, `sim-menstruation`, `sim-ejaculation`, `sim-sperm-race`, `sim-gamete-surface`, `sim-conception`, `sim-dna`, `sim-prenatal-loss`, `sim-birth-date`, `sim-gestation`, `sim-health`, `sim-mortality`, `sim-lifecycle`) using **SQLite** for scientific reference data, per-female egg-reserve databases, and per-ejaculation sperm-cell artifacts |
 | **Real-Time Chat** | `frontend-chat` + `chat-service` + `chat-world-registry` with player-selectable World Chat Servers (`chat.world.<world_server_id>`), PostgreSQL 18+ persistence (`chat.*` schema), NATS JetStream fan-out, rate limiting, and content-policy moderation ([ADR-0002](docs/architecture/ADR-0002-world-chat-microservices-and-server-selection.md)) |
 | **Observability & Quality** | **OpenTelemetry** tracing ([ADR-0004](docs/architecture/ADR-0004-shared-opentelemetry-observability.md)), `log/slog` structured JSON logging ([ADR-0003](docs/architecture/ADR-0003-shared-logging-library.md)), Prometheus metrics, deterministic fixed-seed simulation tests, `golangci-lint`, `govulncheck`, and Trivy container scanning (`Makefile` [ADR-0008](docs/architecture/ADR-0008-multi-module-makefile-build-automation.md) & GitHub Actions [ADR-0009](docs/architecture/ADR-0009-github-actions-ci-cd.md)) |
-| **Deployment Target** | Hardened non-root `distroless/static` containers on **Microsoft Azure Kubernetes Service (AKS)** with Azure Database for PostgreSQL Flexible Server (18+), ACR, and Key Vault |
+| **Deployment Target** | Hardened non-root `distroless/static` containers on private **Microsoft Azure Kubernetes Service (AKS)** with all backend services (and PostgreSQL 18+) in **private / non-public subnets** isolated **1:1 by Kubernetes namespace** (same namespace = same subnet; different namespaces = different subnets), per-subnet NSGs + `NetworkPolicy`, end-to-end encrypted cloud traffic (TLS 1.3 / mTLS), Private Endpoints for ACR/Key Vault/Blob Storage ([ADR-0012](docs/architecture/ADR-0012-private-subnet-isolation-and-encrypted-cloud-communication.md)) |
 
 For full entity-relationship models, architecture diagrams, SQLite deployment patterns, and service catalogs, see the [Technical Concept](docs/Concept.md).
 
@@ -146,7 +146,7 @@ PrincessPink is currently in **Phase 0 / Architectural Foundation**. Planned imp
 2. **Phase 2 — Character Sheet, Chat & Frontend MVP:** `frontend-gateway`, `frontend-sheets`, `frontend-gm`, `frontend-chat`, `chat-service`, `chat-world-registry` (player-selectable World Chat Servers, Group Chat, and 1-to-1 Direct Messages), `character-registry`, `sheet-aggregator`, initial `attr-*` microservices, and `portrait-renderer`.
 3. **Phase 3 — Core Reproduction Simulation Pipeline:** `sim-clock`, `sim-character-generator`, `sim-egg-reserve`, `sim-egg-selection`, `sim-menarche`, `sim-menstruation`, `sim-ejaculation`, `sim-sperm-race`, `sim-gamete-surface`, `sim-conception`, and `sim-dna` with SQLite stores, event bus integration, and fixed-seed cohort tests.
 4. **Phase 4 — Full Lifecycle & Population Features:** `sim-prenatal-loss`, `sim-birth-date`, `sim-gestation`, `sim-health`, `sim-mortality`, `sim-lifecycle`, multi-generational family trees, and Game Master population analytics.
-5. **Phase 5 — Production Hardening on Azure AKS:** Full Helm/Kustomize manifests, Azure PostgreSQL, Key Vault, `NetworkPolicy`, HPA, observability dashboards, security audit, and operational runbooks.
+5. **Phase 5 — Production Hardening on Azure AKS:** Full Infrastructure-as-Code and Helm/Kustomize manifests, private / non-public per-namespace VNet subnets and NSGs, Azure PostgreSQL 18+, Key Vault / ACR / Blob Private Endpoints, `NetworkPolicy`, mandatory end-to-end TLS 1.3 / mTLS for all cloud communication ([ADR-0012](docs/architecture/ADR-0012-private-subnet-isolation-and-encrypted-cloud-communication.md)), HPA, observability dashboards, security audit, and operational runbooks.
 
 ---
 
@@ -166,6 +166,7 @@ PrincessPink is currently in **Phase 0 / Architectural Foundation**. Planned imp
   - [ADR-0009: GitHub Actions CI/CD Architecture (`.github/workflows/`)](docs/architecture/ADR-0009-github-actions-ci-cd.md)
   - [ADR-0010: User Administration Service (`user-admin`) — PostgreSQL 18+, Argon2id Auth, Player/GM RBAC & Group Management](docs/architecture/ADR-0010-user-admin-auth-rbac-and-group-management.md)
   - [ADR-0011: Go as the Sole Programming Language (Go 1.27+)](docs/architecture/ADR-0011-go-as-sole-programming-language.md)
+  - [ADR-0012: Private Subnet Isolation per Namespace & End-to-End Encrypted Cloud Communication](docs/architecture/ADR-0012-private-subnet-isolation-and-encrypted-cloud-communication.md)
 - **[Operational Runbooks (`docs/runbooks/`)](docs/runbooks/)** — Deployment, backup, and incident response runbooks (planned).
 
 ---
@@ -191,7 +192,7 @@ This project adheres to the Contributor Covenant Code of Conduct (version 2.0). 
 
 ## Security
 
-PrincessPink is designed with security in mind (`Argon2id`, MFA, RBAC, TLS 1.3/mTLS, `govulncheck`, and Trivy image scanning—see [docs/Concept.md](docs/Concept.md#42-user-administration--security-service) and [ADR-0010](docs/architecture/ADR-0010-user-admin-auth-rbac-and-group-management.md)).
+PrincessPink is designed with security in mind (`Argon2id`, MFA, RBAC, private / non-public per-namespace subnets, end-to-end TLS 1.3 / mTLS for all external and cloud-internal communication, `govulncheck`, and Trivy image scanning—see [docs/Concept.md](docs/Concept.md#42-user-administration--security-service), [ADR-0010](docs/architecture/ADR-0010-user-admin-auth-rbac-and-group-management.md), and [ADR-0012](docs/architecture/ADR-0012-private-subnet-isolation-and-encrypted-cloud-communication.md)).
 
 If you discover a security vulnerability, please **do not** open a public issue. Instead, report it privately to the project maintainers via GitHub Security Advisories as detailed in [SECURITY.md](SECURITY.md).
 

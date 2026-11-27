@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-11-21
 - **Deciders:** PrincessPink Architecture
-- **Related Documents:** [`docs/Concept.md`](../Concept.md), [`README.md`](../../README.md), [`ADR-0001`](ADR-0001-minimum-postgresql-version.md)
+- **Related Documents:** [`docs/Concept.md`](../Concept.md), [`README.md`](../../README.md), [`ADR-0001`](ADR-0001-minimum-postgresql-version.md), [`ADR-0012`](ADR-0012-private-subnet-isolation-and-encrypted-cloud-communication.md)
 
 ---
 
@@ -26,13 +26,13 @@ PrincessPink realizes World of Warcraft-style World Chat using **logical World C
 
 ### 1. Realizing World Chat in a Microservice Environment
 
-Instead of binding each browser directly to a dedicated stateful server process per world, connection handling, server directory management, and message routing are decoupled across three focused microservices in the `frontend` and `chat` namespaces:
+Instead of binding each browser directly to a dedicated stateful server process per world, connection handling, server directory management, and message routing are decoupled across three focused microservices in the `frontend` (`snet-frontend`) and `chat` (`snet-chat`) namespaces—each in its own private / non-public VNet subnet communicating strictly over encrypted TLS 1.3 / mTLS per [ADR-0012](ADR-0012-private-subnet-isolation-and-encrypted-cloud-communication.md):
 
-| Microservice | Namespace | Responsibilities |
+| Microservice | Namespace (Private Subnet) | Responsibilities |
 | :--- | :--- | :--- |
-| **`frontend-chat`** | `frontend` | Stateless Go + Gin edge service terminating authenticated WebSocket (`wss://`) connections (validated via `frontend-gateway` / `user-admin`). Renders the chat UI, World Chat Server selector, and slash commands (`/world`, `/1`, `/servers`, `/group`, `/whisper`), multiplexing World, Group, and Direct Message streams over a **single** client WebSocket. |
-| **`chat-world-registry`** | `chat` | Authoritative directory and lifecycle manager for **World Chat Servers**. Stores server metadata in PostgreSQL 18+ (`chat.world_servers`), tracks live occupancy via periodic pod heartbeats over NATS, computes population bands (`LOW`, `MEDIUM`, `HIGH`, `FULL`), exposes gRPC `ListWorldServers` / `GetWorldServer` / `RecommendWorldServer`, and manages server statuses (`ONLINE`, `HIGH_LOAD`, `FULL`, `MAINTENANCE`, `DRAINING`). |
-| **`chat-service`** | `chat` | Horizontally scalable messaging engine handling message ingestion, authorization via `user-admin`, zero-violence/zero-nudity content filtering, per-user rate limiting, mute/block/report enforcement, PostgreSQL 18+ persistence (`chat.*` schema using native `uuidv7()` primary keys), and real-time fan-out over NATS JetStream. |
+| **`frontend-chat`** | `frontend` (`snet-frontend`) | Stateless Go + Gin edge service terminating authenticated WebSocket (`wss://`, TLS 1.3) connections behind edge ingress (validated via `frontend-gateway` / `user-admin`). Renders the chat UI, World Chat Server selector, and slash commands (`/world`, `/1`, `/servers`, `/group`, `/whisper`), multiplexing World, Group, and Direct Message streams over a **single** client WebSocket. |
+| **`chat-world-registry`** | `chat` (`snet-chat`) | Authoritative directory and lifecycle manager for **World Chat Servers** (co-located in `snet-chat` with `chat-service`). Stores server metadata in PostgreSQL 18+ (`chat.world_servers`, TLS 1.3), tracks live occupancy via periodic pod heartbeats over encrypted NATS (`snet-messaging`), computes population bands (`LOW`, `MEDIUM`, `HIGH`, `FULL`), exposes mTLS gRPC `ListWorldServers` / `GetWorldServer` / `RecommendWorldServer`, and manages server statuses (`ONLINE`, `HIGH_LOAD`, `FULL`, `MAINTENANCE`, `DRAINING`). |
+| **`chat-service`** | `chat` (`snet-chat`) | Horizontally scalable messaging engine handling message ingestion, authorization via `user-admin` (mTLS gRPC), zero-violence/zero-nudity content filtering, per-user rate limiting, mute/block/report enforcement, PostgreSQL 18+ persistence (`chat.*` schema using native `uuidv7()` primary keys over TLS 1.3), and real-time fan-out over encrypted NATS JetStream (TLS 1.3 / mTLS). |
 
 #### Partitioned Fan-Out & Persistence
 - **NATS JetStream Subject Sharding:** Each World Chat Server maps to its own isolated NATS JetStream subject:

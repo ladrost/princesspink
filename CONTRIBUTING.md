@@ -59,7 +59,7 @@ PrincessPink is currently in **Phase 0 (Architectural Foundation)**, transitioni
 
 - **[`README.md`](README.md)** — Project overview, architecture summary, and roadmap.
 - **[`docs/Concept.md`](docs/Concept.md)** — Domain model, character lifecycle, genetics/simulation rules, microservice catalog, persistence strategy, and AKS deployment design.
-- **[`docs/architecture/`](docs/architecture/)** — Architecture Decision Records ([ADR-0001](docs/architecture/ADR-0001-minimum-postgresql-version.md) through [ADR-0011](docs/architecture/ADR-0011-go-as-sole-programming-language.md)).
+- **[`docs/architecture/`](docs/architecture/)** — Architecture Decision Records ([ADR-0001](docs/architecture/ADR-0001-minimum-postgresql-version.md) through [ADR-0012](docs/architecture/ADR-0012-private-subnet-isolation-and-encrypted-cloud-communication.md)).
 - **[`AGENTS.md`](AGENTS.md)** — Coding standards, domain invariants, linter policies, and shared library rules (applies to both human contributors and AI coding agents).
 
 ---
@@ -316,9 +316,9 @@ Use the shared platform libraries defined in our ADRs rather than introducing co
 | Library | ADR | Key Requirements |
 | :--- | :--- | :--- |
 | **`libs/logging`** | [ADR-0003](docs/architecture/ADR-0003-shared-logging-library.md) | Stdlib `log/slog` JSON logging only (no Zap/Zerolog). Always call `*Context` methods (`InfoContext`, `WarnContext`, `ErrorContext`). Never log PII, emails, credentials, tokens, DSNs, or raw chat bodies—log non-PII `user_uuid`. |
-| **`libs/telemetry`** | [ADR-0004](docs/architecture/ADR-0004-shared-opentelemetry-observability.md) | Initialize once in `main()` via `telemetry.Init(ctx, cfg)` with bounded `Shutdown(ctx)`. Propagate W3C Trace Context across Gin, gRPC, and NATS. Name metrics `princesspink_<domain>_<metric>_<unit>` and **never** use unbounded IDs (`character_uuid`, `user_uuid`, `group_id`, `ejaculation_id`) as Prometheus labels. Expose `/healthz`, `/readyz`, and internal-only `/metrics`. |
-| **`libs/proto`** | [ADR-0005](docs/architecture/ADR-0005-shared-grpc-protobuf-contracts.md) | `buf`-governed contracts, committed generated Go code, `grpcutil` factories, and `grpc.health.v1.Health` on every gRPC server. |
-| **`libs/config`** | [ADR-0006](docs/architecture/ADR-0006-shared-configuration-library.md) | Typed `config.Load[T](ctx)` with fail-fast validation, `*_FILE` secret indirection, and `config.Secret` redaction (no Viper or scattered `os.Getenv`). Never store scientific constants in env vars. |
+| **`libs/telemetry`** | [ADR-0004](docs/architecture/ADR-0004-shared-opentelemetry-observability.md) | Initialize once in `main()` via `telemetry.Init(ctx, cfg)` with bounded `Shutdown(ctx)`. Propagate W3C Trace Context across Gin, gRPC, and NATS. Name metrics `princesspink_<domain>_<metric>_<unit>` and **never** use unbounded IDs (`character_uuid`, `user_uuid`, `group_id`, `ejaculation_id`) as Prometheus labels. Expose `/healthz`, `/readyz`, and internal-only `/metrics`; use TLS 1.3 / mTLS for OTLP and `/metrics` in all cloud environments ([ADR-0012](docs/architecture/ADR-0012-private-subnet-isolation-and-encrypted-cloud-communication.md)). |
+| **`libs/proto`** | [ADR-0005](docs/architecture/ADR-0005-shared-grpc-protobuf-contracts.md) | `buf`-governed contracts, committed generated Go code, `grpcutil` factories with mandatory mTLS (TLS 1.3) in all cloud environments ([ADR-0012](docs/architecture/ADR-0012-private-subnet-isolation-and-encrypted-cloud-communication.md)), and `grpc.health.v1.Health` on every gRPC server. |
+| **`libs/config`** | [ADR-0006](docs/architecture/ADR-0006-shared-configuration-library.md) | Typed `config.Load[T](ctx)` with fail-fast validation (rejecting plaintext/insecure transport settings in cloud environments per [ADR-0012](docs/architecture/ADR-0012-private-subnet-isolation-and-encrypted-cloud-communication.md)), `*_FILE` secret indirection, and `config.Secret` redaction (no Viper or scattered `os.Getenv`). Never store scientific constants in env vars. |
 | **`libs/uuid`** | [ADR-0007](docs/architecture/ADR-0007-shared-uuid-utilities.md) | RFC 9562 **UUIDv7** for all domain, event, outbox, and correlation IDs. Reject nil/malformed UUIDs at boundaries; build SQLite filenames strictly from validated canonical UUIDs. **Never** use UUIDs as security secrets—use `crypto/rand` (≥ 256 bits). |
 
 ### Domain & Scientific Modeling Invariants
@@ -365,7 +365,7 @@ Pull requests are reviewed against the following criteria:
 
 1. **Domain & Policy Alignment:** Adherence to [`docs/Concept.md`](docs/Concept.md), ADRs, biological/RPG domain invariants, and the Content & Safety Policy.
 2. **Go Quality & Maintainability:** Idiomatic Go style, clean API boundaries, proper error wrapping, race-free concurrency, context propagation, and bounded resource usage.
-3. **Security & Privacy:** Parameterized SQL, defense-in-depth RBAC/group ownership enforcement, safe UUID validation (especially for SQLite artifact paths), zero PII/secret leakage in logs/errors/metrics, and pure-Go static container compatibility.
+3. **Security, Cloud Networking & Privacy:** Parameterized SQL, defense-in-depth RBAC/group ownership enforcement, safe UUID validation (especially for SQLite artifact paths), zero PII/secret leakage in logs/errors/metrics, private per-namespace subnet placement with zero public backend exposure, mandatory end-to-end TLS 1.3 / mTLS for all cloud communication ([ADR-0012](docs/architecture/ADR-0012-private-subnet-isolation-and-encrypted-cloud-communication.md)), and pure-Go static container compatibility.
 4. **Contract & Observability Hygiene:** Backward-compatible Protobuf evolution, structured `slog` context logging, OpenTelemetry trace propagation, and low-cardinality Prometheus metric labels.
 5. **Testing & Reproducibility:** Meaningful table-driven tests covering negative/edge cases, deterministic fixed-seed simulation tests where applicable, and zero flaky tests.
 
