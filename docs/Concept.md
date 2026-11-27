@@ -635,63 +635,74 @@ PrincessPink follows a **distributed microservices architecture** written exclus
 
 ```mermaid
 flowchart TB
-    Client[Web Browser / Player & GM] --> Ingress[Azure Front Door / AKS Ingress + TLS]
+    Client[Web Browser / Player & GM] -->|HTTPS / wss TLS 1.3| Edge[Azure Front Door]
 
-    subgraph AKS["Azure Kubernetes Service (AKS)"]
-        subgraph FrontendNS["Namespace: frontend (Go + Gin)"]
-            AuthGW[Auth / Session Gateway]
-            SheetUI[Character Sheet Web Service]
-            GMUI[Game Master Dashboard Service]
-            PortraitUI[Comic Portrait Service]
-            ChatUI[Chat UI / WebSocket Gateway]
+    subgraph VNet["Azure Virtual Network (Private Cloud Subnets — All Cloud Traffic Encrypted: TLS 1.3 / mTLS)"]
+        subgraph IngressSub["Namespace: ingress | Subnet: snet-ingress"]
+            Ingress[AKS Ingress / App Gateway for Containers]
         end
 
-        subgraph AuthNS["Namespace: user-admin"]
-            UserAdmin[User & Group Admin Service]
+        subgraph AKS["Azure Kubernetes Service (AKS — 1:1 Namespace-to-Private-Subnet Isolation)"]
+            subgraph FrontendNS["Namespace: frontend | Private Subnet: snet-frontend (Go + Gin)"]
+                AuthGW[Auth / Session Gateway]
+                SheetUI[Character Sheet Web Service]
+                GMUI[Game Master Dashboard Service]
+                PortraitUI[Comic Portrait Service]
+                ChatUI[Chat UI / WebSocket Gateway]
+            end
+
+            subgraph AuthNS["Namespace: user-admin | Private Subnet: snet-user-admin"]
+                UserAdmin[User & Group Admin Service]
+            end
+
+            subgraph ChatNS["Namespace: chat | Private Subnet: snet-chat"]
+                ChatSvc[Chat Service\nWorld / Group / 1-to-1 DM]
+                ChatWorldReg[World Chat Server Registry]
+            end
+
+            subgraph SheetNS["Namespace: character-sheet | Private Subnet: snet-character-sheet"]
+                SheetAgg[Character Sheet Aggregator]
+                CharReg[Character Registry Service]
+                AttrAge[Attr: Biological Age]
+                AttrFert[Attr: Fertility Index]
+                AttrGen[Attr: Genetic Traits]
+                AttrHorm[Attr: Hormonal State]
+                AttrLineage[Attr: Lineage & Pedigree]
+                AttrN[Attr: ... N Attribute Services]
+            end
+
+            subgraph SimNS["Namespace: simulation | Private Subnet: snet-simulation"]
+                SimClock[Simulation Clock Service]
+                CharGen[Character Generator Service]
+                EggReserve[Egg-Cell Reserve Service]
+                EggSelect[Egg-Cell Selection Service]
+                Menarche[First Menstruation Service]
+                Menstruation[Menstruation Cycle Service]
+                Ejaculation[Ejaculation Service]
+                SpermRace[Race-to-the-Egg Service]
+                GameteSurface[Gamete Surface Compatibility Service]
+                Conception[Conception Service]
+                DNACalc[DNA Calculation Service]
+                PrenatalLoss[Prenatal Loss Service]
+                BirthDate[Birth Date Calculation Service]
+                Gestation[Gestation Service]
+                HealthSim[Health & Fitness Simulation Service]
+                Mortality[Date of Death Service]
+                Lifecycle[Lifecycle Service]
+            end
+
+            subgraph MsgNS["Namespace: messaging | Private Subnet: snet-messaging"]
+                EventBus[(Event Bus / Message Broker\nNATS JetStream or Azure Service Bus)]
+            end
         end
 
-        subgraph ChatNS["Namespace: chat"]
-            ChatSvc[Chat Service\nWorld / Group / 1-to-1 DM]
-            ChatWorldReg[World Chat Server Registry]
+        subgraph PGSub["Delegated Private Subnet: snet-postgresql"]
+            PG[(Central PostgreSQL 18+\nAzure Database for PostgreSQL)]
         end
-
-        subgraph SheetNS["Namespace: character-sheet"]
-            SheetAgg[Character Sheet Aggregator]
-            CharReg[Character Registry Service]
-            AttrAge[Attr: Biological Age]
-            AttrFert[Attr: Fertility Index]
-            AttrGen[Attr: Genetic Traits]
-            AttrHorm[Attr: Hormonal State]
-            AttrLineage[Attr: Lineage & Pedigree]
-            AttrN[Attr: ... N Attribute Services]
-        end
-
-        subgraph SimNS["Namespace: simulation"]
-            SimClock[Simulation Clock Service]
-            CharGen[Character Generator Service]
-            EggReserve[Egg-Cell Reserve Service]
-            EggSelect[Egg-Cell Selection Service]
-            Menarche[First Menstruation Service]
-            Menstruation[Menstruation Cycle Service]
-            Ejaculation[Ejaculation Service]
-            SpermRace[Race-to-the-Egg Service]
-            GameteSurface[Gamete Surface Compatibility Service]
-            Conception[Conception Service]
-            DNACalc[DNA Calculation Service]
-            PrenatalLoss[Prenatal Loss Service]
-            BirthDate[Birth Date Calculation Service]
-            Gestation[Gestation Service]
-            HealthSim[Health & Fitness Simulation Service]
-            Mortality[Date of Death Service]
-            Lifecycle[Lifecycle Service]
-        end
-
-        EventBus[(Event Bus / Message Broker\nNATS JetStream or Azure Service Bus)]
     end
 
-    PG[(Central PostgreSQL\nAzure Database for PostgreSQL)]
-
-    Ingress --> AuthGW
+    Edge -->|TLS 1.3| Ingress
+    Ingress -->|TLS 1.3 / mTLS| AuthGW
     AuthGW --> SheetUI
     AuthGW --> GMUI
     AuthGW --> PortraitUI
@@ -737,6 +748,11 @@ flowchart TB
     EventBus <--> Lifecycle
     EventBus <--> CharReg
 ```
+
+**Cloud Network Placement & Encryption Rules ([ADR-0012](architecture/ADR-0012-private-subnet-isolation-and-encrypted-cloud-communication.md)):**
+- **Private / Non-Public Subnets:** All PrincessPink backend services (`user-admin`, `chat`, `character-sheet`, `simulation`, `messaging`, and `observability`—as well as `frontend` pods behind edge ingress) run exclusively in **private / non-public Azure VNet subnets** with no public IPs, matching the delegated private subnet (`snet-postgresql`) used by **Azure Database for PostgreSQL Flexible Server (18+)**.
+- **1:1 Namespace-to-Subnet Isolation:** Services within the **same Kubernetes namespace** share the **same private subnet**, whereas services in **different namespaces** are always placed in **different private subnets** (enforced via Azure CNI per-namespace node pools/pod subnets, pod placement policies, per-subnet Azure NSGs, and default-deny Kubernetes `NetworkPolicy`).
+- **All Cloud Communication Encrypted:** Every link shown above—both external (`HTTPS` / `wss://` TLS 1.3) and **within the cloud** (ingress-to-frontend TLS 1.3/mTLS, intra- and cross-subnet gRPC mTLS, NATS JetStream / Service Bus TLS 1.3/mTLS, PostgreSQL TLS 1.3 `sslmode=verify-full`, OTLP/Prometheus observability TLS 1.3/mTLS, and Azure PaaS Private Endpoints)—is strictly encrypted with zero plaintext hops.
 
 ### 3.3 Repository & Go Workspace Layout
 The repository is structured as a Go multi-module workspace (`go.work`) to keep shared contracts and service implementations cleanly separated:
@@ -785,9 +801,10 @@ princesspink/
 ```
 
 ### 3.4 Inter-Service Communication Patterns
-- **External / Frontend HTTP & WebSockets:** REST/HTML over HTTPS using the **Gin** framework, plus authenticated **WebSockets** over TLS (`wss://`) in `frontend-chat` for real-time bi-directional Global, Group, and 1-to-1 Direct Message chat delivery.
-- **Internal Synchronous RPC:** **gRPC with Protocol Buffers** (`libs/proto`, see [ADR-0005](architecture/ADR-0005-shared-grpc-protobuf-contracts.md)) for low-latency, strongly typed internal calls (especially the high fan-out from `sheet-aggregator` to individual `attr-*` services, authorization/group-membership checks against `user-admin`, point-in-time state reconstruction `GetCharacterStateAtSimTick`, female biological-window validation `ValidateFemaleBiologicalWindow`, atomic NPC takeover `ClaimNpcOwnership`, GM unowned-NPC activation `ActivateGroupNpc`, parentless character/cohort generation via `sim-character-generator`, founder diploid genome synthesis in `sim-dna`, and direct calculation queries to `sim-prenatal-loss`, `sim-birth-date`, `sim-egg-selection`, `sim-menarche`, `sim-health`, and `sim-mortality`).
-- **Internal Asynchronous Events:** An event broker (**NATS JetStream** inside AKS or **Azure Service Bus**) for decoupled, reliable propagation of simulation ticks, clock lifecycle changes, chat pub/sub fan-out across pods, and biological/character lifecycle events (e.g., `sim.clock.started`, `sim.clock.stopped`, `sim.clock.resumed`, `sim.clock.config.updated`, `sim.tick.advanced`, `sim.character.generated`, `sim.egg_reserve.created`, `sim.menarche.calculated`, `sim.egg.selected`, `sim.ovulation.triggered`, `sim.climacterium.reached`, `sim.conception.occurred`, `sim.dna.calculated`, `sim.prenatal_loss.evaluated`, `sim.prenatal_loss.occurred`, `sim.birthdate.calculated`, `sim.character.born`, `character.history.appended`, `character.life.completed`, `character.reappearance.activated`, `character.ownership.claimed`, `character.weight.updated`, `character.health.updated`, `character.intercourse.updated`, `sim.health.updated`, `sim.fertility.updated`, `character.medication.updated`, `sim.deathdate.calculated`, `sim.character.deceased`).
+- **End-to-End Encryption Across All External & Cloud-Internal Hops ([ADR-0012](architecture/ADR-0012-private-subnet-isolation-and-encrypted-cloud-communication.md)):** Every communication path in PrincessPink—including all internal traffic within the Azure VNet (both intra-subnet within a namespace and cross-subnet across namespaces)—is encrypted using **TLS 1.3 / mTLS**. Plaintext cloud hops (plaintext HTTP behind ingress, insecure gRPC, plaintext NATS, non-`verify-full` PostgreSQL, or insecure OTLP/metrics endpoints) are strictly prohibited outside local development.
+- **External / Frontend HTTP & WebSockets:** REST/HTML over HTTPS (**TLS 1.3**) using the **Gin** framework, plus authenticated **WebSockets** over TLS (`wss://`, TLS 1.3) in `frontend-chat` for real-time bi-directional Global, Group, and 1-to-1 Direct Message chat delivery. Edge ingress (`snet-ingress`) re-encrypts traffic to `frontend-*` (`snet-frontend`) over **TLS 1.3 / mTLS**.
+- **Internal Synchronous RPC:** **gRPC with Protocol Buffers over mandatory mTLS (TLS 1.3)** (`libs/proto`, see [ADR-0005](architecture/ADR-0005-shared-grpc-protobuf-contracts.md) & [ADR-0012](architecture/ADR-0012-private-subnet-isolation-and-encrypted-cloud-communication.md)) for low-latency, strongly typed internal calls (especially the high fan-out from `sheet-aggregator` to individual `attr-*` services, authorization/group-membership checks against `user-admin`, point-in-time state reconstruction `GetCharacterStateAtSimTick`, female biological-window validation `ValidateFemaleBiologicalWindow`, atomic NPC takeover `ClaimNpcOwnership`, GM unowned-NPC activation `ActivateGroupNpc`, parentless character/cohort generation via `sim-character-generator`, founder diploid genome synthesis in `sim-dna`, and direct calculation queries to `sim-prenatal-loss`, `sim-birth-date`, `sim-egg-selection`, `sim-menarche`, `sim-health`, and `sim-mortality`).
+- **Internal Asynchronous Events:** An encrypted event broker (**NATS JetStream** inside AKS `snet-messaging` with mandatory **TLS 1.3 / mTLS** on all client, cluster-route, leaf-node, and JetStream replication links, or **Azure Service Bus** over Private Endpoint with TLS 1.3) for decoupled, reliable propagation of simulation ticks, clock lifecycle changes, chat pub/sub fan-out across pods, and biological/character lifecycle events (e.g., `sim.clock.started`, `sim.clock.stopped`, `sim.clock.resumed`, `sim.clock.config.updated`, `sim.tick.advanced`, `sim.character.generated`, `sim.egg_reserve.created`, `sim.menarche.calculated`, `sim.egg.selected`, `sim.ovulation.triggered`, `sim.climacterium.reached`, `sim.conception.occurred`, `sim.dna.calculated`, `sim.prenatal_loss.evaluated`, `sim.prenatal_loss.occurred`, `sim.birthdate.calculated`, `sim.character.born`, `character.history.appended`, `character.life.completed`, `character.reappearance.activated`, `character.ownership.claimed`, `character.weight.updated`, `character.health.updated`, `character.intercourse.updated`, `sim.health.updated`, `sim.fertility.updated`, `character.medication.updated`, `sim.deathdate.calculated`, `sim.character.deceased`).
 - **Correlation & Idempotency:** Every request and event carries a `correlation_id`, `group_id`, and `character_uuid` (standardized on RFC 9562 UUIDv7 via `libs/uuid`, see [ADR-0007](architecture/ADR-0007-shared-uuid-utilities.md)). Event consumers must be idempotent to safely handle at-least-once delivery.
 
 ### 3.5 Independent Microservice Versioning
@@ -835,7 +852,7 @@ The `user-admin` microservice is the authoritative source of identity, group mem
   - `GAME_MASTER`: Read/supervisory access to all active player characters and NPCs (born children, GM/system-generated NPCs, and GM-activated reappearing unowned NPCs) living in `managed_groups(current_user.id)`; permission to generate parentless role-play NPCs (`GM_NPC`) and to **activate existing unowned characters (`owner_user_id == null`, alive during Group `G`'s `T_sim`) as NPCs** (`GROUP_CHARACTER_PARTICIPATION`) within `GROUP.simulation_config` bounds (**strictly denied** for any Player-owned character); initialize the Group's simulation start date (`dd/MM/YYYY` at `0:00 h`, also previewable in `LOBBY`); adjust the Group's per-group simulation tick configuration, `character_generation`, `npc_ownership_claim`, `reappearance`, and prenatal-loss settings; stop and resume the Group's simulation tick for role-play; and adjust character `weight_kg` and bounded role-play health indicators strictly for **`LIVE_PRIMARY`** characters within `GROUP.simulation_config` guardrails (**strictly denied** for `REPLAY_IMMUTABLE` already-simulated characters).
   - **System Bootstrap (`SYSTEM_SEED`):** Internal operator/bootstrap-only generation path isolated from public Player/GM browser routes (enforced via internal mTLS/service identity) for initializing fresh deployments, starter worlds, and deterministic test fixtures.
   - Enforcement occurs at both `frontend-gateway` (coarse-grained) and backend services such as `sheet-aggregator` / `character-registry` / `sim-character-generator` (fine-grained defense in depth).
-- **Transport & Service Security:** TLS 1.3 externally; mTLS internally between Kubernetes pods.
+- **Transport, Subnet Isolation & Service Security ([ADR-0012](architecture/ADR-0012-private-subnet-isolation-and-encrypted-cloud-communication.md)):** All communication externally and within the cloud happens encrypted—TLS 1.3 externally, TLS 1.3 / mTLS from edge ingress to `frontend`, mTLS (TLS 1.3) between all Kubernetes pods (both within and across namespaces), TLS 1.3 / mTLS on NATS JetStream and observability pipelines, and TLS 1.3 (`sslmode=verify-full`) to PostgreSQL 18+. `user-admin` and all other backend services reside exclusively in private / non-public per-namespace VNet subnets (`snet-user-admin`, etc.) with zero public internet exposure.
 - **Audit Logging:** Immutable audit trail in PostgreSQL recording authentication events, role/group changes, GM access to player character sheets, GM simulation clock and `GROUP.simulation_config` operations (start-date initialization, per-group sim tick rate adjustments, stop/resume actions, `character_generation`, `npc_ownership_claim`, `reappearance`, and prenatal-loss configuration changes), parentless character generation events (`SYSTEM_SEED`, `GM_NPC`, `PLAYER_NEW_FAMILY`, `PLAYER_GROUP_JOIN`), Player NPC ownership claims (`NPC_OWNERSHIP_CLAIM`), GM activation of unowned NPCs (`GROUP_CHARACTER_PARTICIPATION`), GM role-play `weight_kg` adjustments, Player role-play lifestyle/training and GM bounded health-indicator adjustments (`HEALTH_ADJUSTMENT`), and Player role-play medical drug checkbox changes.
 
 ---
@@ -1154,7 +1171,7 @@ PrincessPink provides an integrated, real-time **Chat** system (`frontend-chat` 
 PrincessPink uses a **polyglot persistence strategy** aligned with service ownership:
 
 ### 5.1 Central PostgreSQL (Authoritative Transactional Data)
-Hosted on **Azure Database for PostgreSQL (Flexible Server)** running **PostgreSQL 18+** (minimum supported version; see [ADR-0001](architecture/ADR-0001-minimum-postgresql-version.md)) with automated backups, point-in-time recovery (PITR), and high availability.
+Hosted on **Azure Database for PostgreSQL (Flexible Server)** running **PostgreSQL 18+** (minimum supported version; see [ADR-0001](architecture/ADR-0001-minimum-postgresql-version.md)) in its own dedicated delegated **private / non-public VNet subnet** (`snet-postgresql`, with public access disabled and mandatory TLS 1.3 `sslmode=verify-full` per [ADR-0012](architecture/ADR-0012-private-subnet-isolation-and-encrypted-cloud-communication.md)), with automated backups, point-in-time recovery (PITR), and high availability.
 - **Minimum Version Rationale (`PostgreSQL 18+`):** Generally Available across all Azure public regions with upstream security support through November 2030, providing native `uuidv7()` for PrincessPink's UUID-everywhere primary keys and cursor-paginated chat/audit/outbox tables, `RETURNING OLD/NEW` for atomic audit trails, SQL/JSON functions for `jsonb` (`simulation_config`), B-tree skip scans, Asynchronous I/O (`worker` mode on Azure), and hardened security (`SCRAM-SHA-256`, TLS 1.3, OAuth 2.0 / Microsoft Entra ID).
 - **Owned Domains:**
   - `user-admin`: Users, credentials (Argon2id hashes), MFA secrets, sessions/refresh tokens, groups, memberships (including each Player's single `selected_character_id` chosen at Group start), RBAC policies, and audit logs (see [ADR-0010](architecture/ADR-0010-user-admin-auth-rbac-and-group-management.md)).
@@ -1200,28 +1217,35 @@ Selected simulation microservices use embedded **SQLite** databases for low-late
 ## 6. Cloud Infrastructure & Deployment (Microsoft Azure AKS)
 
 ### 6.1 Kubernetes Cluster Topology
-PrincessPink runs on **Azure Kubernetes Service (AKS)** with workload isolation via Kubernetes Namespaces:
-- `ingress` — Ingress controller (e.g., NGINX or Azure Application Gateway for Containers) and TLS termination (cert-manager / Azure Key Vault).
-- `frontend` — Gin web microservices (`frontend-gateway`, `frontend-sheets`, `frontend-gm`, `frontend-chat`, `portrait-renderer`).
-- `user-admin` — Authentication, user, and group administration services (see [ADR-0010](architecture/ADR-0010-user-admin-auth-rbac-and-group-management.md)).
-- `chat` — Real-time messaging services (`chat-service` and `chat-world-registry`) handling player-selectable World Chat Servers, Group Chat, and 1-to-1 Direct Messages (see [ADR-0002](architecture/ADR-0002-world-chat-microservices-and-server-selection.md)).
-- `character-sheet` — `character-registry`, `sheet-aggregator`, and all `attr-*` microservices.
-- `simulation` — Biological simulation microservices (`sim-clock`, `sim-character-generator`, `sim-egg-reserve`, `sim-egg-selection`, `sim-menarche`, `sim-menstruation`, `sim-ejaculation`, `sim-sperm-race`, `sim-gamete-surface`, `sim-conception`, `sim-dna`, `sim-prenatal-loss`, `sim-birth-date`, `sim-gestation`, `sim-health`, `sim-mortality`, `sim-lifecycle`).
-- `messaging` — Event broker (if running NATS JetStream in-cluster).
-- `observability` — OpenTelemetry Collector, Prometheus, Grafana/Azure Monitor agents.
+PrincessPink runs on **Azure Kubernetes Service (AKS)** using **Azure CNI** with strict **1:1 Namespace-to-Private-Subnet isolation** ([ADR-0012](architecture/ADR-0012-private-subnet-isolation-and-encrypted-cloud-communication.md)): **services within the same Kubernetes namespace (see [§3.2 High-Level Architecture Diagram](#32-high-level-architecture-diagram)) are located in the same private subnet, whereas services in different namespaces are located in different private subnets.** All backend service namespaces (and `frontend` pods behind edge ingress) reside exclusively in **private / non-public subnets** with zero public IPs, matching the private VNet subnet of Azure Database for PostgreSQL:
+- `ingress` → **`snet-ingress`** (dedicated edge subnet; sole bridge from Azure Front Door into `snet-frontend`) — Ingress controller (e.g., NGINX or Azure Application Gateway for Containers) and TLS 1.3 edge termination with encrypted re-encryption to `frontend` (cert-manager / Azure Key Vault).
+- `frontend` → **`snet-frontend`** *(private / non-public)* — Gin web microservices (`frontend-gateway`, `frontend-sheets`, `frontend-gm`, `frontend-chat`, `portrait-renderer`).
+- `user-admin` → **`snet-user-admin`** *(private / non-public)* — Authentication, user, and group administration services (see [ADR-0010](architecture/ADR-0010-user-admin-auth-rbac-and-group-management.md)).
+- `chat` → **`snet-chat`** *(private / non-public)* — Real-time messaging services (`chat-service` and `chat-world-registry`) handling player-selectable World Chat Servers, Group Chat, and 1-to-1 Direct Messages (see [ADR-0002](architecture/ADR-0002-world-chat-microservices-and-server-selection.md)).
+- `character-sheet` → **`snet-character-sheet`** *(private / non-public)* — `character-registry`, `sheet-aggregator`, and all `attr-*` microservices.
+- `simulation` → **`snet-simulation`** *(private / non-public)* — Biological simulation microservices (`sim-clock`, `sim-character-generator`, `sim-egg-reserve`, `sim-egg-selection`, `sim-menarche`, `sim-menstruation`, `sim-ejaculation`, `sim-sperm-race`, `sim-gamete-surface`, `sim-conception`, `sim-dna`, `sim-prenatal-loss`, `sim-birth-date`, `sim-gestation`, `sim-health`, `sim-mortality`, `sim-lifecycle`).
+- `messaging` → **`snet-messaging`** *(private / non-public)* — Event broker (if running NATS JetStream in-cluster).
+- `observability` → **`snet-observability`** *(private / non-public)* — OpenTelemetry Collector, Prometheus, Grafana/Azure Monitor agents.
+- `kube-system` (AKS System Pool) → **`snet-aks-system`** *(private / non-public)* — CoreDNS, Cilium / service-mesh control plane, `cert-manager`, and Secrets Store CSI Driver.
 
 ### 6.2 Azure Managed Services Integration
-- **Azure Kubernetes Service (AKS):** Managed control plane, separate system and user node pools, cluster autoscaler.
-- **Azure Container Registry (ACR):** Private registry for signed Go distroless/scratch container images.
-- **Azure Database for PostgreSQL Flexible Server (PostgreSQL 18+):** Managed central relational database (minimum version PostgreSQL 18 per [ADR-0001](architecture/ADR-0001-minimum-postgresql-version.md)) with private VNet integration and Microsoft Entra ID authentication.
-- **Azure Key Vault + Secrets Store CSI Driver:** Centralized storage and automatic rotation of database credentials, JWT signing keys, and TLS certificates.
-- **Azure Monitor & Log Analytics:** Unified metrics, logs, and alerting.
+- **Azure Kubernetes Service (AKS):** Private AKS cluster control plane, Azure CNI (Azure CNI Powered by Cilium or Azure CNI Dynamic IP Allocation with pod subnets) binding dedicated per-namespace node pools / pod subnets 1:1 to each private subnet above, separate system node pool (`snet-aks-system`), and cluster autoscaler ([ADR-0012](architecture/ADR-0012-private-subnet-isolation-and-encrypted-cloud-communication.md)).
+- **Azure Container Registry (ACR):** Private registry for signed Go distroless/scratch container images accessed exclusively over TLS 1.3 via **Private Endpoint** (`snet-private-endpoints`).
+- **Azure Database for PostgreSQL Flexible Server (PostgreSQL 18+):** Managed central relational database (minimum version PostgreSQL 18 per [ADR-0001](architecture/ADR-0001-minimum-postgresql-version.md)) deployed in its own delegated **private / non-public subnet** (`snet-postgresql`, public access disabled) with mandatory TLS 1.3 (`sslmode=verify-full`) and Microsoft Entra ID authentication.
+- **Azure Key Vault + Secrets Store CSI Driver:** Centralized storage and automatic rotation of database credentials, JWT signing keys, and TLS/mTLS certificates, accessed over TLS 1.3 via **Private Endpoint** (`snet-private-endpoints`).
+- **Azure Blob Storage (SQLite Gamete Artifacts):** Durable Egg-Reserve archive/hydration storage and per-ejaculation SQLite artifact storage with `secureTransferRequired` (HTTPS TLS 1.3) over **Private Endpoint** (`snet-private-endpoints`).
+- **Azure Monitor & Log Analytics:** Unified metrics, logs, and alerting over TLS 1.3 via **Azure Monitor Private Link Scope (AMPLS)** (`snet-private-endpoints`).
 
 ### 6.3 Networking, Security & Resilience
-- **Zero-Trust Pod Networking:** Default-deny Kubernetes `NetworkPolicy` per namespace, explicitly allowing only required service-to-service paths (e.g., `sheet-aggregator` → `attr-*`; `user-admin` → PostgreSQL).
+- **Private / Non-Public Subnets for All Backend Services ([ADR-0012](architecture/ADR-0012-private-subnet-isolation-and-encrypted-cloud-communication.md)):** Every backend microservice namespace (`user-admin`, `chat`, `character-sheet`, `simulation`, `messaging`, `observability`)—as well as `frontend` pods behind edge ingress—is placed in private / non-public Azure VNet subnets with zero public IPs and zero public LoadBalancer/NodePort exposure, mirroring PostgreSQL (`snet-postgresql`). Only Azure Front Door / `snet-ingress` terminates external internet traffic.
+- **1:1 Namespace-to-Subnet Isolation & Dual-Layer Zero-Trust Enforcement ([ADR-0012](architecture/ADR-0012-private-subnet-isolation-and-encrypted-cloud-communication.md)):**
+  - Services in the same namespace run in the same private subnet; services in different namespaces always run in different private subnets, enforced via dedicated AKS node pool subnets, node taints (`princesspink.io/namespace=<ns>:NoSchedule`), and Kubernetes admission controls (Kyverno / OPA Gatekeeper / `PodNodeSelector`).
+  - **Cloud Layer (L3/L4):** Per-subnet **Azure Network Security Groups (NSGs)** enforce default-deny inter-subnet filtering with explicit allow-lists strictly for required encrypted cross-subnet flows.
+  - **Cluster Layer (L3/L4/L7):** Default-deny Kubernetes / Cilium `NetworkPolicy` per namespace explicitly allowing only required service-to-service paths (e.g., `sheet-aggregator` → `attr-*`; `user-admin` → PostgreSQL).
+- **Mandatory End-to-End Encryption Within the Cloud ([ADR-0012](architecture/ADR-0012-private-subnet-isolation-and-encrypted-cloud-communication.md)):** All communication—externally and on every internal cloud hop (intra-subnet and cross-subnet)—is encrypted with **TLS 1.3 / mTLS**: HTTPS/`wss://` externally, end-to-end TLS 1.3 / mTLS from `snet-ingress` to `snet-frontend`, mandatory mTLS (TLS 1.3) for all gRPC RPCs (`libs/proto/grpcutil` / service mesh SPIFFE), TLS 1.3 / mTLS for NATS JetStream client/cluster/replication traffic (or Azure Service Bus over Private Endpoint), TLS 1.3 (`sslmode=verify-full`) for PostgreSQL 18+, TLS 1.3 / mTLS for OTLP trace export and Prometheus `/metrics` scraping, and HTTPS TLS 1.3 for all Azure PaaS Private Endpoints. `libs/config` fails fast on startup if plaintext/insecure transport settings are supplied in any cloud environment (`dev`, `staging`, `prod`).
 - **Container Hardening:** Multi-stage Go builds producing minimal non-root images (`distroless/static`), read-only root filesystems (except mounted SQLite PVC paths where required), dropped Linux capabilities.
 - **Resilience & Scaling:**
-  - Horizontal Pod Autoscaler (HPA) on CPU/RPS for stateless frontend, attribute, and read-only simulation services.
+  - Horizontal Pod Autoscaler (HPA) on CPU/RPS for stateless frontend, attribute, and read-only simulation services (with per-namespace subnet CIDR blocks sized for peak HPA + rolling-update surge capacity).
   - `PodDisruptionBudgets` (PDB), readiness/liveness/startup probes (`/healthz`, `/readyz`), gRPC deadlines, circuit breakers, and bounded retries.
 
 ---
@@ -1251,7 +1275,7 @@ PrincessPink runs on **Azure Kubernetes Service (AKS)** with workload isolation 
 ### 7.3 CI/CD & Developer Experience
 - **Local Development:** `Makefile` targets (see [ADR-0008](architecture/ADR-0008-multi-module-makefile-build-automation.md)), typed 12-Factor environment/file-secret configuration (`libs/config`, see [ADR-0006](architecture/ADR-0006-shared-configuration-library.md)), and local Kubernetes (`kind` / `k3d`) or Docker Compose stack for running core services locally without Azure dependencies.
 - **CI/CD (`.github/workflows/`):** Automated `golangci-lint`, unit/integration tests, vulnerability scanning (`govulncheck`, Trivy), independent per-service versioned multi-arch container builds to ACR (tagged with each microservice's own semantic version), and GitOps/Helm deployments to AKS (dev → staging → prod) (see [ADR-0009](architecture/ADR-0009-github-actions-ci-cd.md)).
-- **Operational Documentation:** API contracts in `docs/api/`, Architecture Decision Records (ADRs) in `docs/architecture/` ([ADR-0001](architecture/ADR-0001-minimum-postgresql-version.md)–[ADR-0011](architecture/ADR-0011-go-as-sole-programming-language.md)), and incident/backup runbooks in `docs/runbooks/`.
+- **Operational Documentation:** API contracts in `docs/api/`, Architecture Decision Records (ADRs) in `docs/architecture/` ([ADR-0001](architecture/ADR-0001-minimum-postgresql-version.md)–[ADR-0012](architecture/ADR-0012-private-subnet-isolation-and-encrypted-cloud-communication.md)), and incident/backup runbooks in `docs/runbooks/`.
 
 ---
 
@@ -1270,6 +1294,7 @@ PrincessPink runs on **Azure Kubernetes Service (AKS)** with workload isolation 
 | **Parentless character generation abuse (stat-farming & storage amplification)** | Players repeatedly generating characters to cherry-pick high reproduction stats, or oversized GM/system batches exhausting PostgreSQL and per-female Egg-Reserve SQLite storage. | Roll all genetic loci, `blood_type`, and AD&D reproduction stats strictly server-side with seeded PRNGs; enforce per-player roster quotas, cooldowns, GM batch/NPC caps in `GROUP.simulation_config.character_generation`, internal-only `SYSTEM_SEED` isolation, and immutable `CHARACTER_GENERATION_RECORD` + `user_admin.audit_logs` auditing. |
 | **Append-only attribute-change history growth & point-in-time query latency** | Storing every lifetime attribute change across large multi-generational populations can grow PostgreSQL tables and slow "as-of `T_sim`" sheet reconstruction. | Persist delta-only changes (skipping no-op ticks) plus periodic milestone checkpoints, index `(character_id, attribute_key, effective_at_sim DESC)` using PostgreSQL 18 `uuidv7()` and B-tree skip scans, range-partition historical tables in Phase 5, and cache immutable `sim_tick <= simulated_until_sim` responses aggressively in `sheet-aggregator`. |
 | **Timeline forks, overlapping reappearance pregnancies & NPC claim races** | Concurrent Groups advancing the same character's attributes, scheduling biologically overlapping pregnancies on a reappearing female, letting a GM activate a Player-owned character, or two Players claiming the same unowned NPC simultaneously. | Enforce a single active `LIVE_PRIMARY` Group per character via a partial unique index, `REVOKE UPDATE, DELETE` on `CHARACTER_ATTRIBUTE_HISTORY`, reject all mutations in `REPLAY_IMMUTABLE` mode, validate female biological windows under per-mother `FOR UPDATE` locking + temporal non-overlap checks across `PREGNANCY`, restrict GM NPC activation strictly to `owner_user_id IS NULL`, and execute `NPC_OWNERSHIP_CLAIM` atomically (`UPDATE ... WHERE owner_user_id IS NULL RETURNING OLD, NEW`). |
+| **Backend exposure, cross-namespace lateral movement & plaintext cloud traffic** | Misconfigured ingress/services exposing backend endpoints publicly, flat shared cluster subnets enabling lateral movement across domains, or unencrypted internal cloud hops leaking JWTs, DMs, or auth traffic. | Enforce [ADR-0012](architecture/ADR-0012-private-subnet-isolation-and-encrypted-cloud-communication.md): deploy all backend services (and PostgreSQL) strictly in private / non-public subnets mapped 1:1 to each Kubernetes namespace with per-subnet Azure NSGs, pod-placement admission policies, default-deny `NetworkPolicy`, Private Endpoints for Azure PaaS, and mandatory TLS 1.3 / mTLS on all external and cloud-internal communication with `libs/config` fail-fast validation. |
 
 ---
 
@@ -1287,7 +1312,7 @@ PrincessPink runs on **Azure Kubernetes Service (AKS)** with workload isolation 
 4. **Phase 4 — Full Lifecycle & Population Features**
    - Implement `sim-prenatal-loss` (prenatal pregnancy loss risk and outcome evaluation across implantation and gestation), `sim-birth-date` (from mother's last menstruation or conception date), `sim-gestation` (supporting both `LIVE_PRIMARY` and non-mutating `REPLAY_IMMUTABLE` reappearance pregnancies with `recovery_end_sim` tracking), `sim-health` (appending immutable health history in `LIVE_PRIMARY` mode and zero writes in `REPLAY_IMMUTABLE` mode), `sim-mortality` (health-adjusted natural date of death calculation, immutable once completed), `sim-lifecycle` (aging, `CHARACTER_ATTRIBUTE_HISTORY` sealing on death, and `REPLAY_IMMUTABLE` participation lifecycle), multi-generational family trees, and Game Master population analytics.
 5. **Phase 5 — Production Hardening on Azure AKS**
-   - Deploy full Helm/Kustomize manifests to AKS with Azure PostgreSQL, Key Vault, NetworkPolicies, HPA, observability dashboards, security audit, and operational runbooks.
+   - Deploy full Infrastructure-as-Code (Terraform/Bicep) and Helm/Kustomize manifests to a private AKS cluster with 1:1 per-namespace private / non-public VNet subnets (`snet-frontend`, `snet-user-admin`, `snet-chat`, `snet-character-sheet`, `snet-simulation`, `snet-messaging`, `snet-observability`, `snet-postgresql`, `snet-private-endpoints`), per-subnet Azure NSGs, Azure PostgreSQL 18+, Key Vault / ACR / Blob Private Endpoints, default-deny `NetworkPolicy`, mandatory end-to-end TLS 1.3 / mTLS on all cloud communication ([ADR-0012](architecture/ADR-0012-private-subnet-isolation-and-encrypted-cloud-communication.md)), HPA, observability dashboards, security audit, and operational runbooks.
 
 ---
 

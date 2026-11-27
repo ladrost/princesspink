@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-11-22
 - **Deciders:** PrincessPink Architecture
-- **Related Documents:** [`docs/Concept.md`](../Concept.md), [`README.md`](../../README.md), [`ADR-0003`](ADR-0003-shared-logging-library.md), [`ADR-0005`](ADR-0005-shared-grpc-protobuf-contracts.md), [`ADR-0006`](ADR-0006-shared-configuration-library.md)
+- **Related Documents:** [`docs/Concept.md`](../Concept.md), [`README.md`](../../README.md), [`ADR-0003`](ADR-0003-shared-logging-library.md), [`ADR-0005`](ADR-0005-shared-grpc-protobuf-contracts.md), [`ADR-0006`](ADR-0006-shared-configuration-library.md), [`ADR-0012`](ADR-0012-private-subnet-isolation-and-encrypted-cloud-communication.md)
 
 ---
 
@@ -21,7 +21,7 @@ Without a shared observability bootstrap in `libs/telemetry`, services would div
 
 ## Decision
 
-PrincessPink establishes a shared Go module **`libs/telemetry`** built on the **OpenTelemetry Go SDK (`go.opentelemetry.io/otel`)**, exporting traces via **OTLP/gRPC** to the in-cluster OpenTelemetry Collector and exposing **Prometheus-compatible metrics** alongside standardized instrumentation helpers for Gin, gRPC, PostgreSQL, SQLite, and NATS JetStream.
+PrincessPink establishes a shared Go module **`libs/telemetry`** built on the **OpenTelemetry Go SDK (`go.opentelemetry.io/otel`)**, exporting traces via encrypted **OTLP/gRPC (TLS 1.3 / mTLS in all cloud environments per [ADR-0012](ADR-0012-private-subnet-isolation-and-encrypted-cloud-communication.md))** to the in-cluster OpenTelemetry Collector (`observability` namespace / `snet-observability`) and exposing **Prometheus-compatible metrics** over encrypted internal admin transport alongside standardized instrumentation helpers for Gin, gRPC, PostgreSQL, SQLite, and NATS JetStream.
 
 ### 1. Unified Bootstrap & Resource Identity
 
@@ -42,7 +42,7 @@ Every microservice initializes telemetry once in `main()` via `telemetry.Init(ct
 
 ### 3. Metrics & Domain Instrumentation
 
-- **Prometheus-Compatible Exposition:** Uses the OpenTelemetry Go `prometheus` exporter bridged to a dedicated `/metrics` HTTP endpoint (bound on an internal management port not exposed through public AKS Ingress) scraped by Prometheus / Azure Monitor Managed Prometheus.
+- **Prometheus-Compatible Exposition:** Uses the OpenTelemetry Go `prometheus` exporter bridged to a dedicated `/metrics` endpoint (bound on an internal management port over HTTPS / mTLS in cloud environments and never exposed through public AKS Ingress; [ADR-0012](ADR-0012-private-subnet-isolation-and-encrypted-cloud-communication.md)) scraped by Prometheus / Azure Monitor Managed Prometheus.
 - **Standard Service Metrics:** Automatically registers Go runtime metrics (`runtime`), HTTP/gRPC request counts and latency histograms (p50/p95/p99), and gRPC client fan-out error counters (critical for `sheet-aggregator` graceful degradation visibility).
 - **Domain Metric Conventions:** Defines shared metric naming conventions (`princesspink_<domain>_<metric>_<unit>`, e.g., `princesspink_sim_tick_duration_seconds`, `princesspink_sim_characters_generated_total`, `princesspink_sim_reappearances_total`, `princesspink_character_npc_claims_total`, `princesspink_sim_conceptions_total`, `princesspink_sim_prenatal_losses_total`, `princesspink_sheet_attr_degraded_total`, `princesspink_chat_world_sessions_active`) and strictly forbids high-cardinality labels such as `character_uuid`, `user_uuid`, or `ejaculation_id` on Prometheus metrics (those belong on traces and structured logs; use strictly bounded enums like `creation_source`, `simulation_mode`, `participation_role`, or `loss_stage`).
 
@@ -86,6 +86,6 @@ Every microservice initializes telemetry once in `main()` via `telemetry.Init(ct
 - Strict cardinality discipline prevents Prometheus memory exhaustion as simulated populations grow across generations.
 
 ### Trade-offs & Operational Notes
-- **Collector Dependency in AKS:** Requires deploying and maintaining an OpenTelemetry Collector in the `observability` namespace with appropriate `NetworkPolicy` egress rules from `frontend`, `user-admin`, `chat`, `character-sheet`, and `simulation`.
-- **Internal Admin Port Isolation:** `/metrics` must bind to an internal admin port (or be blocked at Ingress) so internal operational telemetry is never publicly exposed.
+- **Collector Dependency & Encrypted Transport in AKS ([ADR-0012](ADR-0012-private-subnet-isolation-and-encrypted-cloud-communication.md)):** Requires deploying and maintaining an OpenTelemetry Collector in the private `observability` namespace subnet (`snet-observability`) with explicit Azure NSG and `NetworkPolicy` egress rules from `frontend`, `user-admin`, `chat`, `character-sheet`, `simulation`, and `messaging`. In all cloud environments (`dev`, `staging`, `prod`), OTLP/gRPC export must use TLS 1.3 / mTLS (never `otlptracegrpc.WithInsecure()`).
+- **Internal Admin Port Isolation:** `/metrics` must bind to an encrypted (HTTPS / mTLS) internal admin port in cloud environments (and remain blocked at Ingress) so internal operational telemetry is never publicly exposed or transmitted in plaintext.
 - **Cardinality Reviews:** Code reviews and CI checks must ensure `character_uuid`, `user_uuid`, and `group_id` are attached to trace span attributes and `slog` logs—never as unbounded Prometheus metric labels.

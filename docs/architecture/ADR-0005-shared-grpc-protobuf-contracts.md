@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-11-22
 - **Deciders:** PrincessPink Architecture
-- **Related Documents:** [`docs/Concept.md`](../Concept.md), [`README.md`](../../README.md), [`Makefile`](../../Makefile), [`ADR-0002`](ADR-0002-world-chat-microservices-and-server-selection.md), [`ADR-0004`](ADR-0004-shared-opentelemetry-observability.md), [`ADR-0008`](ADR-0008-multi-module-makefile-build-automation.md)
+- **Related Documents:** [`docs/Concept.md`](../Concept.md), [`README.md`](../../README.md), [`Makefile`](../../Makefile), [`ADR-0002`](ADR-0002-world-chat-microservices-and-server-selection.md), [`ADR-0004`](ADR-0004-shared-opentelemetry-observability.md), [`ADR-0008`](ADR-0008-multi-module-makefile-build-automation.md), [`ADR-0012`](ADR-0012-private-subnet-isolation-and-encrypted-cloud-communication.md)
 
 ---
 
@@ -57,7 +57,7 @@ libs/proto/
 ### 3. Shared gRPC Runtime Helpers (`libs/proto/grpcutil`)
 
 To keep individual microservices concise and consistent, `libs/proto/grpcutil` provides:
-- **Standard Server & Client Factories:** Pre-wired with OpenTelemetry stats handlers ([ADR-0004](ADR-0004-shared-opentelemetry-observability.md)), structured `slog` interceptors ([ADR-0003](ADR-0003-shared-logging-library.md)), panic recovery, and mTLS/TLS transport credentials for AKS.
+- **Standard Server & Client Factories:** Pre-wired with OpenTelemetry stats handlers ([ADR-0004](ADR-0004-shared-opentelemetry-observability.md)), structured `slog` interceptors ([ADR-0003](ADR-0003-shared-logging-library.md)), panic recovery, and mandatory **mTLS (TLS 1.3)** transport credentials for all cloud environments (`dev`, `staging`, `prod` on AKS—covering both intra-subnet calls within a namespace and cross-subnet calls across namespaces; `insecure.NewCredentials()` is forbidden outside explicit `local` dev/test mode per [ADR-0012](ADR-0012-private-subnet-isolation-and-encrypted-cloud-communication.md)).
 - **Mandatory Deadlines & Metadata Propagation:** Client helpers enforce a default per-call timeout if the caller omits a deadline (preventing goroutine leaks during `sheet-aggregator` fan-out) and automatically propagate `correlation_id`, `user_uuid`, `group_id`, and `service_version` in gRPC metadata.
 - **Standard Health & Reflection:** Registers `grpc.health.v1.Health` on every gRPC server and enables gRPC Server Reflection in `local`/`dev` environments only (disabled in `prod`).
 

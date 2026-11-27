@@ -21,6 +21,7 @@ This file provides authoritative instructions for AI coding agents and contribut
   - [`docs/architecture/ADR-0009`](docs/architecture/ADR-0009-github-actions-ci-cd.md) — GitHub Actions CI/CD architecture.
   - [`docs/architecture/ADR-0010`](docs/architecture/ADR-0010-user-admin-auth-rbac-and-group-management.md) — `user-admin` auth, RBAC & group management.
   - [`docs/architecture/ADR-0011`](docs/architecture/ADR-0011-go-as-sole-programming-language.md) — Go as the sole programming language (no planned polyglot breaks).
+  - [`docs/architecture/ADR-0012`](docs/architecture/ADR-0012-private-subnet-isolation-and-encrypted-cloud-communication.md) — Private subnet isolation per namespace & end-to-end encrypted cloud communication.
 
 ---
 
@@ -67,10 +68,11 @@ Respect these domain rules across all services and tests:
   - Must contain `go.mod`, a `VERSION` file (SemVer, e.g. `0.1.0`), `cmd/<service-name>/main.go` (or `cmd/server/main.go`), and `internal/` packages for private domain/adapter code.
   - Release tags follow `<service-name>/v<VERSION>`.
   - Embed `Version`, `Commit`, and `BuildDate` via `-ldflags` (handled automatically by `make build`).
-- **Communication Boundaries:**
-  - Browser-facing edge (`frontend-*`): Go + **Gin** HTTP/HTMX and authenticated TLS WebSockets (`wss://`).
-  - Internal synchronous RPC: **gRPC / Protocol Buffers** (`libs/proto`).
-  - Internal asynchronous events & chat fan-out: **NATS JetStream** (with transactional outbox for PostgreSQL writes and idempotent consumers for at-least-once delivery).
+- **Communication Boundaries & Cloud Network Isolation ([ADR-0012](docs/architecture/ADR-0012-private-subnet-isolation-and-encrypted-cloud-communication.md)):**
+  - Browser-facing edge (`frontend-*` in `snet-frontend`, behind dedicated `snet-ingress` / Azure Front Door): Go + **Gin** HTTP/HTMX and authenticated TLS WebSockets (`wss://`), with end-to-end TLS 1.3 / mTLS re-encryption from ingress to `frontend-*`.
+  - Internal synchronous RPC: **gRPC / Protocol Buffers** (`libs/proto`) over mandatory **mTLS (TLS 1.3)** for all intra-subnet and cross-subnet calls in cloud environments.
+  - Internal asynchronous events & chat fan-out: **NATS JetStream** (`snet-messaging`, mandatory TLS 1.3 / mTLS on client, cluster, leaf-node, and replication links) or Azure Service Bus over Private Endpoint (with transactional outbox for PostgreSQL writes and idempotent consumers for at-least-once delivery).
+  - Subnet isolation: All backend services (and PostgreSQL, as well as `frontend` pods behind edge ingress) reside exclusively in **private / non-public subnets** mapped 1:1 per Kubernetes namespace (same namespace = same subnet; different namespaces = different subnets).
 
 ---
 
@@ -112,14 +114,14 @@ Respect these domain rules across all services and tests:
   - Initialize OpenTelemetry once in `main()` via `telemetry.Init(ctx, cfg)` and invoke bounded-timeout `Shutdown(ctx)` on `SIGTERM`/`SIGINT`.
   - Propagate W3C Trace Context and Baggage across Gin (`otelgin`), gRPC (`otelgrpc`), and NATS JetStream headers.
   - Follow metric naming `princesspink_<domain>_<metric>_<unit>`. **Never** use unbounded identifiers (`character_uuid`, `user_uuid`, `group_id`, `ejaculation_id`) as Prometheus labels.
-  - Expose `/healthz`, `/readyz`, and internal-only `/metrics` (never exposed through public ingress).
+  - Expose `/healthz`, `/readyz`, and internal-only `/metrics` (never exposed through public ingress); export OTLP/gRPC telemetry and serve `/metrics` over **TLS 1.3 / mTLS** in all cloud environments (never `otlptracegrpc.WithInsecure()` in cloud deployments, ADR-0012).
 - **gRPC & Protobuf (`libs/proto`, ADR-0005):**
   - Define all internal RPC and NATS event schemas under `libs/proto/` governed by `buf` (`make proto-lint`, `make proto-breaking`, `make proto-gen`).
   - Commit generated Go code under `libs/proto/gen/go/` so standard `go build`/`go test` work without `buf`/`protoc`.
   - Evolve `v1` contracts additively only; reserve removed field names/numbers; introduce `v2` for breaking changes.
-  - Use `libs/proto/grpcutil` server/client factories and register `grpc.health.v1.Health` on every gRPC server.
+  - Use `libs/proto/grpcutil` server/client factories with mandatory **mTLS (TLS 1.3)** in all cloud environments (never `insecure.NewCredentials()` outside explicit `local` dev/test mode, ADR-0012) and register `grpc.health.v1.Health` on every gRPC server.
 - **Configuration (`libs/config`, ADR-0006):**
-  - Load operational settings via typed `config.Load[T](ctx)` with fail-fast validation before opening listeners. Do **not** use Viper or scattered `os.Getenv` calls, and do **not** silently load `.env` files in containers.
+  - Load operational settings via typed `config.Load[T](ctx)` with fail-fast validation before opening listeners—rejecting plaintext/insecure HTTP, gRPC, PostgreSQL (`sslmode != verify-full`), NATS, or OTLP transport settings in all cloud environments (`dev`, `staging`, `prod`, ADR-0012). Do **not** use Viper or scattered `os.Getenv` calls, and do **not** silently load `.env` files in containers.
   - Support `*_FILE` secret indirection (Azure Key Vault CSI / Docker secrets) and wrap sensitive fields in `config.Secret` so `String()`, `MarshalJSON()`, and `LogValue()` always emit `[REDACTED]`.
 - **UUIDs (`libs/uuid`, ADR-0007):**
   - Generate all domain, event, outbox, and correlation IDs as RFC 9562 **UUIDv7** via `libs/uuid` (do **not** call `github.com/google/uuid` directly or use UUIDv4).
@@ -129,9 +131,13 @@ Respect these domain rules across all services and tests:
 
 ### 5.5 Data Storage, Security & Containers
 
-- **PostgreSQL 18+ (ADR-0001, ADR-0010):**
+- **Cloud Networking, Private Subnets & End-to-End Encryption (ADR-0012):**
+  - **Private / Non-Public Subnets:** All PrincessPink backend services (`user-admin`, `chat`, `character-sheet`, `simulation`, `messaging`, `observability`)—just like Azure Database for PostgreSQL (`snet-postgresql`), as well as `frontend` pods behind edge ingress—must be deployed exclusively in **private / non-public Azure VNet subnets** with zero public IP addresses and no public `LoadBalancer`/`NodePort` exposure. Only the public edge (`Azure Front Door` / `snet-ingress`) accepts external browser traffic.
+  - **1:1 Namespace-to-Subnet Isolation:** Services in the **same Kubernetes namespace** (per `docs/Concept.md` §3.2 High-Level Architecture Diagram) must reside in the **same private subnet** (`snet-frontend`, `snet-user-admin`, `snet-chat`, `snet-character-sheet`, `snet-simulation`, `snet-messaging`, `snet-observability`), whereas services in **different namespaces** must reside in **different private subnets**—enforced via Azure CNI per-namespace node pools/pod subnets, node taints/placement policies, per-subnet Azure NSGs, and default-deny Kubernetes `NetworkPolicy`.
+  - **Encrypted Cloud Communication Everywhere:** **All communication—external and within the cloud—must be encrypted** (TLS 1.3 / mTLS across ingress-to-frontend, intra- and cross-subnet gRPC, NATS JetStream / Azure Service Bus, PostgreSQL `sslmode=verify-full`, OTLP/Prometheus observability, and Azure Key Vault / ACR / Blob Storage Private Endpoints). Zero plaintext internal hops in `dev`, `staging`, or `prod`.
+- **PostgreSQL 18+ (ADR-0001, ADR-0010, ADR-0012):**
   - Use `pgx/v5`, native `uuidv7()`, PostgreSQL 18 `RETURNING OLD, NEW` for atomic audit capture, per-service schemas, and least-privilege DB roles.
-  - Enforce `sslmode=verify-full` / Microsoft Entra ID in staging/production. Do **not** enable `io_uring` on Azure Database for PostgreSQL Flexible Server.
+  - Deploy in its dedicated delegated private / non-public subnet (`snet-postgresql`) and enforce `sslmode=verify-full` (TLS 1.3) / Microsoft Entra ID in all cloud environments (`dev`, `staging`, `prod`). Do **not** enable `io_uring` on Azure Database for PostgreSQL Flexible Server.
   - Use parameterized queries exclusively (zero SQL string concatenation) and versioned SQL migrations.
   - Pair PostgreSQL state mutations with NATS event publishing via a transactional outbox table.
 - **SQLite (Concept, ADR-0008):**
