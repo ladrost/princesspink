@@ -85,9 +85,11 @@ princesspink/
 ├── libs/                   # Shared Go libraries (gRPC/Protobuf contracts, auth middleware, telemetry, helpers)
 ├── services/               # Independently deployable and versioned Go microservices
 ├── CODE_OF_CONDUCT.md      # Contributor Covenant Code of Conduct (v2.0)
+├── CONTRIBUTING.md         # Contribution workflow, local setup, testing & code review standards
 ├── LICENSE                 # BSD 3-Clause License
 ├── Makefile                # Multi-module build, test, lint, Protobuf, versioning, and container targets
 ├── README.md               # Project overview and developer entry point
+├── SECURITY.md             # Vulnerability reporting & security policy
 └── go.work                 # Go multi-module workspace definition
 ```
 
@@ -175,7 +177,7 @@ Contributions, architectural feedback, and scientific modeling discussions are w
 3. Fork the repository, create a feature branch, and ensure `make check` passes for any Go changes.
 4. Submit a pull request with a clear description, rationale, and relevant unit or deterministic simulation tests.
 
-All contributions must strictly respect the project's **zero-violence, zero-nudity** principles.
+All contributions must strictly respect the project's **zero-violence, zero-nudity** principles. Please see [CONTRIBUTING.md](CONTRIBUTING.md) for the full contributor guide, local setup, testing commands, and code review standards.
 
 ---
 
@@ -189,7 +191,7 @@ This project adheres to the Contributor Covenant Code of Conduct (version 2.0). 
 
 PrincessPink is designed with security in mind (`Argon2id`, MFA, RBAC, TLS 1.3/mTLS, `govulncheck`, and Trivy image scanning—see [docs/Concept.md](docs/Concept.md#42-user-administration--security-service) and [ADR-0010](docs/architecture/ADR-0010-user-admin-auth-rbac-and-group-management.md)).
 
-If you discover a security vulnerability, please **do not** open a public issue. Instead, report it privately to the project maintainers (e.g., via GitHub Security Advisories) with sufficient detail to reproduce and assess the issue.
+If you discover a security vulnerability, please **do not** open a public issue. Instead, report it privately to the project maintainers via GitHub Security Advisories as detailed in [SECURITY.md](SECURITY.md).
 
 ---
 
