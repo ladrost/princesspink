@@ -12,7 +12,7 @@
 PrincessPink uses a **UUID-everywhere** identity model across all microservices, databases, and events (Concept §2.1, §2.3, §3.4 & [ADR-0001](ADR-0001-minimum-postgresql-version.md)):
 
 - **Characters:** Every Character receives a globally unique, immutable `UUID` either at conception (`CONCEIVED` → `GESTATING` → `ALIVE` → `DECEASED`) or at parentless character generation via `sim-character-generator` (direct `ALIVE` → `DECEASED` with `mother_uuid = null`, `father_uuid = null`), linking retained/archived per-female Egg-Reserve SQLite databases (`egg_reserve_<character_uuid>.sqlite` hydrated on demand during `REPLAY_IMMUTABLE` reappearances), immutable attribute-change history rows (`CHARACTER_ATTRIBUTE_HISTORY`), `CHARACTER_GENERATION_RECORD` audit rows, and lineage graphs (`mother_uuid`, `father_uuid`).
-- **Users, Groups & Ownership:** `USER`, `GROUP`, `GROUP_MEMBERSHIP`, `GROUP_CHARACTER_PARTICIPATION`, `CHARACTER_GENERATION_RECORD`, `NPC_OWNERSHIP_CLAIM`, and `OWNERSHIP_AGREEMENT` records are keyed by UUID.
+- **Users, Groups, Ownership, Role-Play & Gamification:** `USER`, `GROUP`, `GROUP_MEMBERSHIP`, `GROUP_CHARACTER_PARTICIPATION`, `CHARACTER_GENERATION_RECORD`, `NPC_OWNERSHIP_CLAIM`, `OWNERSHIP_AGREEMENT`, `PREGNANCY.gestation_cohort_id`, `ROLEPLAY_EVENT`, `PARTNER_BOND`, `CHARACTER_MILESTONE`, `GENETIC_CODEX_ENTRY`, and `GROUP_CHALLENGE` records are keyed by UUID.
 - **Chat & Events:** `WORLD_CHAT_SERVER`, `CHAT_CHANNEL`, `CHAT_MESSAGE`, `EJACULATION_DB`, `LIFECYCLE_EVENT`, transactional outbox rows, audit logs, and request `correlation_id` values are UUID-keyed.
 - **PostgreSQL 18+ Alignment:** [ADR-0001](ADR-0001-minimum-postgresql-version.md) adopted PostgreSQL 18+ specifically for native RFC 9562 **`uuidv7()`** time-ordered primary keys, improving B-tree index locality and enabling cursor-based pagination on append-heavy tables (`chat.messages`, audit logs, outbox).
 
@@ -28,7 +28,7 @@ PrincessPink establishes a shared Go module **`libs/uuid`** that standardizes on
 
 | Use Case | Standard | Rationale |
 | :--- | :--- | :--- |
-| **All Domain Entities & Events** (`Character`, `User`, `Group`, `ChatMessage`, `WorldChatServer`, `EjaculationDB`, `Outbox`, `CorrelationID`) | **RFC 9562 UUIDv7** (`uuid.NewV7()`) | Time-ordered (millisecond timestamp + monotonic/random bits), matches PostgreSQL 18+ native `uuidv7()`, eliminates random B-tree index fragmentation, and supports natural cursor pagination. |
+| **All Domain Entities & Events** (`Character`, `User`, `Group`, `ChatMessage`, `WorldChatServer`, `EjaculationDB`, `RoleplayEvent`, `PartnerBond`, `Milestone`, `CodexEntry`, `GroupChallenge`, `Outbox`, `CorrelationID`) | **RFC 9562 UUIDv7** (`uuid.NewV7()`) | Time-ordered (millisecond timestamp + monotonic/random bits), matches PostgreSQL 18+ native `uuidv7()`, eliminates random B-tree index fragmentation, and supports natural cursor pagination. |
 | **Security Secrets, Session Tokens, Refresh Tokens, CSRF Tokens, Password Reset Codes** | **Never UUID** (use `crypto/rand` ≥ 256-bit tokens) | UUIDv7 embeds a millisecond creation timestamp and is not a cryptographic bearer secret. `libs/uuid` explicitly documents this boundary. |
 | **Deterministic Tests** | **Seeded / Fixed Test Helpers** (`uuid.MustParse`, `uuid.Deterministic(seed)`) | Supports reproducible fixed-seed simulation cohort tests (`make test-sim`) without flakiness. |
 
