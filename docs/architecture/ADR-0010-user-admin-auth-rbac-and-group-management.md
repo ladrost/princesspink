@@ -14,7 +14,7 @@ Phase 1 of PrincessPink (**Platform Foundation**, Concept §9) establishes the s
 `user-admin` is the authoritative source of identity, authentication, authorization, and Group (campaign) management across the entire PrincessPink platform (Concept §2.2, §4.2, §5.1). Every downstream subsystem introduced in Phases 2–4 depends on it:
 
 - **`frontend-gateway`, `frontend-sheets`, `frontend-gm`, `frontend-chat`:** User registration, login, MFA verification, session refresh/logout, and coarse-grained route protection.
-- **`character-registry` & `sheet-aggregator`:** Fine-grained verification of Player ownership, single-character-per-group selection, child `origin_group_id` restrictions, and Game Master supervision/adjustment authority.
+- **`character-registry`, `sheet-aggregator` & `sim-character-generator`:** Fine-grained verification of Player ownership, single-character-per-group selection (including sim-clock time-period liveness `date_of_birth <= T_sim < date_of_death`), child `origin_group_id` restrictions, parentless character generation permissions/quotas (`PLAYER_NEW_FAMILY`, `PLAYER_GROUP_JOIN`, `GM_NPC`, and internal-only `SYSTEM_SEED`), and Game Master supervision/adjustment authority.
 - **`chat-service` & `chat-world-registry`:** Validating authenticated WebSocket sessions, enforcing Group Chat membership, and scoping Game Master moderation strictly to their own Group(s).
 - **`sim-clock`:** Receiving authoritative Group creation, mandatory start date (`dd/MM/YYYY` at `0:00 h`), and `GROUP.simulation_config` updates authorized by the Group's Game Master.
 
@@ -34,8 +34,8 @@ PrincessPink implements **`user-admin`** as an independently versioned **Go 1.27
 - **Internal gRPC Surface (`libs/proto/useradmin/v1`):**
   - **`AuthService`:** `Register`, `Login`, `VerifyMFA`, `RefreshSession`, `Logout`, `RevokeAllSessions`, `ChangePassword`, `RequestPasswordReset`, `CompletePasswordReset`, and `GetJWKS` (publishes Ed25519 public keys for fast local JWT verification at `frontend-gateway`).
   - **`UserService`:** `GetUser`, `UpdateProfile`, `UpdateUserRole`, `EnrollTOTP`, `ConfirmTOTP`, `RegisterWebAuthnCredential`, `DisableMFA`, and `RegenerateRecoveryCodes`.
-  - **`GroupService`:** `CreateGroup`, `GetGroup`, `ListUserGroups`, `UpdateGroupConfig`, `StartGroup` (validates mandatory `sim_start_date` and locks character selections), `ArchiveGroup`, `CreateInvitation`, `AcceptInvitation`, `RemoveMember`, `SelectGroupCharacter`, and `ListGroupMembers`.
-  - **`AuthorizationService`:** `AuthorizeAction` answering fine-grained policy checks (e.g., *"Can User `U` view/edit Character `C`?"*, *"Is User `U` the Game Master of Group `G`?"*, *"Can User `U` access Group Chat `G`?"*, *"Can User `U` control `sim-clock` for Group `G`?"*).
+  - **`GroupService`:** `CreateGroup`, `GetGroup`, `ListUserGroups`, `UpdateGroupConfig` (including `sim_start_date` preview in `LOBBY` and `character_generation` policies), `StartGroup` (validates mandatory `sim_start_date` and locks character selections), `ArchiveGroup`, `CreateInvitation`, `AcceptInvitation`, `RemoveMember`, `SelectGroupCharacter`, and `ListGroupMembers`.
+  - **`AuthorizationService`:** `AuthorizeAction` answering fine-grained policy checks (e.g., *"Can User `U` view/edit Character `C`?"*, *"Can User `U` select Character `C` for Group `G` at sim clock date `T_sim`?"*, *"Can User `U` generate a parentless character (`PLAYER_NEW_FAMILY`, `PLAYER_GROUP_JOIN` for Group `G`, or `GM_NPC` in Group `G`)?"*, *"Is User `U` the Game Master of Group `G`?"*, *"Can User `U` access Group Chat `G`?"*, *"Can User `U` control `sim-clock` for Group `G`?"*).
 - **Transactional Outbox Events (NATS JetStream):** Mutations to users, roles, groups, memberships, and group configuration atomically insert Protobuf event envelopes into `user_admin.outbox_events` and relay them to NATS JetStream (`user.registered`, `user.role.updated`, `group.created`, `group.started`, `group.archived`, `group.config.updated`, `group.member.joined`, `group.member.removed`, `group.character.selected`).
 
 ### 2. PostgreSQL 18+ Persistence Schema (`user_admin.*`)
@@ -49,7 +49,7 @@ PrincessPink implements **`user-admin`** as an independently versioned **Go 1.27
 | **`user_admin.mfa_recovery_codes`** | `id` (`uuidv7()` PK), `user_id` (FK), `code_hash` (Argon2id/keyed hash), `used_at` (nullable) | Single-use backup recovery codes issued upon MFA enrollment. |
 | **`user_admin.sessions`** | `id` (`uuidv7()` PK), `user_id` (FK), `token_family_id` (`UUID`), `refresh_token_hash` (SHA-256 of 256-bit `crypto/rand` token), `user_agent_hash`, `ip_prefix`, `expires_at`, `revoked_at`, `revoked_reason`, `created_at` | Active refresh-token sessions supporting rotation and reuse detection. |
 | **`user_admin.password_reset_tokens`** | `id` (`uuidv7()` PK), `user_id` (FK), `token_hash` (SHA-256 of 256-bit `crypto/rand` token), `expires_at`, `used_at`, `created_at` | Short-lived, single-use password recovery tokens (never stored in plaintext). |
-| **`user_admin.groups`** | `id` (`uuidv7()` PK), `name`, `game_master_id` (FK → `users.id`), `status` (`LOBBY` \| `ACTIVE` \| `ARCHIVED`), `sim_start_date` (`DATE`, nullable in `LOBBY`, mandatory on `ACTIVE`), `simulation_config` (`JSONB`), `created_at`, `updated_at` | Authoritative Group (campaign) metadata, GM ownership, mandatory start date (`dd/MM/YYYY`, `0:00 h`), and versioned `simulation_config` (per-group tick rate defaulting to 1 sim year = 24h real time, weight/health bounds, and default-on GM-configurable prenatal-loss settings & prenatal-care tier). |
+| **`user_admin.groups`** | `id` (`uuidv7()` PK), `name`, `game_master_id` (FK → `users.id`), `status` (`LOBBY` \| `ACTIVE` \| `ARCHIVED`), `sim_start_date` (`DATE`, optional/previewable in `LOBBY`, mandatory on `ACTIVE`), `simulation_config` (`JSONB`), `created_at`, `updated_at` | Authoritative Group (campaign) metadata, GM ownership, mandatory start date (`dd/MM/YYYY`, `0:00 h`), and versioned `simulation_config` (per-group tick rate defaulting to 1 sim year = 24h real time, weight/health bounds, `character_generation` limits/age policies, and default-on GM-configurable prenatal-loss settings & prenatal-care tier). |
 | **`user_admin.group_memberships`** | `id` (`uuidv7()` PK), `group_id` (FK), `user_id` (FK), `member_role` (`PLAYER` \| `GAME_MASTER`), `selected_character_id` (`UUID`, nullable until selected), `selection_locked_at` (nullable), `joined_at`, `removed_at` (nullable); `UNIQUE (group_id, user_id) WHERE removed_at IS NULL`; `UNIQUE (group_id, selected_character_id) WHERE selected_character_id IS NOT NULL AND removed_at IS NULL` | Enforces Group membership and the **one active owned Character per Player per Group** invariant at the database constraint level. |
 | **`user_admin.group_invitations`** | `id` (`uuidv7()` PK), `group_id` (FK), `invited_by_user_id` (FK), `invitee_user_id` (nullable FK), `invite_token_hash` (SHA-256 of 256-bit `crypto/rand` token), `status` (`PENDING` \| `ACCEPTED` \| `DECLINED` \| `EXPIRED` \| `REVOKED`), `expires_at`, `created_at` | Controlled Group onboarding initiated by the Group's Game Master. |
 | **`user_admin.audit_logs`** | `id` (`uuidv7()` PK), `occurred_at`, `actor_user_id`, `actor_role`, `action`, `target_type`, `target_id`, `group_id`, `correlation_id`, `service_version`, `old_state` (`JSONB`), `new_state` (`JSONB`), `metadata` (`JSONB`) | Append-only immutable security & governance trail (`REVOKE UPDATE, DELETE` from `user_admin_app`), populated atomically using PostgreSQL 18 `RETURNING OLD, NEW`. |
@@ -77,14 +77,18 @@ PrincessPink implements **`user-admin`** as an independently versioned **Go 1.27
 | Capability / Action | `PLAYER` (Member of Group `G`) | `GAME_MASTER` (Manages Group `G`) | `GAME_MASTER` (Other Group `G'`) |
 | :--- | :--- | :--- | :--- |
 | View/manage own personal Character roster (`owner_user_id == user.id`) | Allowed | Allowed | Allowed (own roster only) |
-| Select **1 owned Character** at start of Group `G` (`origin_group_id != G`) | Allowed (once, before `ACTIVE`) | Allowed only if also a `PLAYER` member | Denied |
+| Generate parentless founder character for own roster (`PLAYER_NEW_FAMILY`) or to join Group `G` when lacking an era-alive character (`PLAYER_GROUP_JOIN`) | Allowed (within quotas/cooldowns & `simulation_config`, audit-logged) | Allowed (own roster / if joining as `PLAYER`) | Allowed (own roster only) |
+| Select **1 owned Character** for Group `G` (`origin_group_id != G` AND **alive at Group `G`'s sim clock date `T_sim`**: `date_of_birth <= T_sim < date_of_death`) | Allowed (before `ACTIVE`, or upon invited active join) | Allowed only if also a `PLAYER` member | Denied |
 | Toggle gender-eligible Medical Drugs & update RP Lifestyle/Training Profile | Allowed (own active living PC) | Denied (unless own PC) | Denied |
-| Initiate/confirm Child `OWNERSHIP_AGREEMENT` | Allowed (biological mother's or father's Player while `owner_user_id == null`) | Denied (unless parent's Player) | Denied |
+| Initiate/confirm Child `OWNERSHIP_AGREEMENT` | Allowed (biological parent's Player while `owner_user_id == null`) | Denied (unless parent's Player, or GM policy approval for PC+NPC parent) | Denied |
 | Create Group, invite/remove Players, update `GROUP.simulation_config` | Denied | Allowed | Denied |
+| Generate parentless role-play NPCs (`GM_NPC`, `owner_user_id = null`, `origin_group_id = G`) in Group `G` | Denied | Allowed (within `simulation_config.character_generation` bounds, audit-logged) | Denied |
 | Start Group (`sim_start_date` `dd/MM/YYYY` at `0:00 h`), adjust/stop/resume `sim-clock` | Denied | Allowed | Denied |
-| Inspect all active PCs and NPC children in Group `G` | Denied (own PC + shared group summary only) | Allowed (audit-logged) | Denied |
+| Inspect all active PCs and NPCs (born children & GM/seed NPCs) in Group `G` | Denied (own PC + shared group summary only) | Allowed (audit-logged) | Denied |
 | Apply bounded RP `weight_kg` & health-indicator adjustments in Group `G` | Denied | Allowed (within `simulation_config` bounds, audit-logged) | Denied |
 | Participate in & moderate Group Chat `G` | Participate only | Participate & Moderate | Denied |
+
+*(Note: `SYSTEM_SEED` batch bootstrapping is restricted strictly to internal operator/bootstrap mTLS identities and is never authorized through Player or Game Master end-user RBAC.)*
 
 #### Enforced Group Lifecycle & Character Selection Flow
 
@@ -94,30 +98,43 @@ sequenceDiagram
     participant Player as Player (via frontend-sheets)
     participant UA as user-admin (gRPC)
     participant CR as character-registry (Phase 2+)
+    participant Gen as sim-character-generator (Phase 3+)
     participant PG as PostgreSQL 18+ (user_admin.*)
     participant Bus as NATS JetStream
 
-    GM->>UA: CreateGroup(name, simulation_config)
+    GM->>UA: CreateGroup(name, sim_start_date, simulation_config)
     UA->>PG: Insert group (status=LOBBY, uuidv7) + audit_log + outbox
     UA->>Bus: Publish group.created
+
+    opt GM seeds role-play NPCs for Group
+        GM->>Gen: GenerateCharacter / GenerateCohort (GM_NPC, group_id, T_sim)
+        Gen->>UA: AuthorizeAction (GM of group_id & character_generation bounds)
+        Gen->>CR: Persist unowned NPC(s) (owner=NULL, origin_group_id=group_id, state=ALIVE)
+    end
 
     GM->>UA: CreateInvitation(group_id, player_id)
     Player->>UA: AcceptInvitation(token)
     UA->>PG: Insert group_memberships (selected_character_id=NULL) + audit_log
 
+    opt Player lacks an owned character alive at Group sim clock date T_sim
+        Player->>Gen: GenerateCharacter (PLAYER_GROUP_JOIN, group_id, T_sim)
+        Gen->>UA: AuthorizeAction (member of group_id, T_sim & quotas)
+        Gen->>CR: Persist owned founder (owner=player_id, origin_group_id=NULL, date_of_birth <= T_sim < date_of_death)
+    end
+
     Player->>UA: SelectGroupCharacter(group_id, character_id)
-    UA->>CR: Verify character.owner_user_id == player_id AND origin_group_id != group_id
+    UA->>CR: Verify owner == player_id, origin_group_id != group_id, ALIVE & date_of_birth <= T_sim < date_of_death
     CR-->>UA: Eligible
     UA->>PG: Update group_memberships.selected_character_id (UNIQUE constraints) + audit_log + outbox
     UA->>Bus: Publish group.character.selected
 
     GM->>UA: StartGroup(group_id, sim_start_date="dd/MM/YYYY")
-    UA->>PG: Validate all active Players selected a PC - set status=ACTIVE, lock selections + RETURNING OLD/NEW audit_log + outbox
+    UA->>PG: Validate all active Players selected an era-alive PC - set status=ACTIVE, lock selections + RETURNING OLD/NEW audit_log + outbox
     UA->>Bus: Publish group.started (consumed by sim-clock at 0:00 h)
 ```
 
-- **Phase 1 → Phase 2 Boundary (`CharacterOwnershipVerifier`):** Because `user-admin` is implemented in **Phase 1** while `character-registry` is implemented in **Phase 2**, `user-admin` defines an internal `CharacterOwnershipVerifier` Go interface. In Phase 2+, it calls `character-registry` over gRPC to verify `owner_user_id == user_id`, `lifecycle_state == ALIVE`, and `origin_group_id != group_id`. In Phase 1 unit/integration tests and standalone bootstrap, an explicit test/stub verifier allows full end-to-end validation of Group creation, invitations, character selection locking, and RBAC without circular Phase 1 dependencies.
-- **Defense in Depth:** `frontend-gateway` validates Ed25519 JWT signatures and CSRF tokens at the edge, while `sheet-aggregator`, `character-registry`, `chat-service`, and `sim-clock` enforce fine-grained authorization via `user-admin`'s `AuthorizationService` (with `GROUP_MEMBERSHIP` and GM ownership verified on every sensitive mutation).
+- **Phase 1 → Phase 2 Boundary (`CharacterOwnershipVerifier`):** Because `user-admin` is implemented in **Phase 1** while `character-registry` is implemented in **Phase 2**, `user-admin` defines an internal `CharacterOwnershipVerifier` Go interface. In Phase 2+, it calls `character-registry` over gRPC to verify `owner_user_id == user_id`, `lifecycle_state == ALIVE`, `origin_group_id != group_id`, and **sim-clock time-period liveness** against Group `G`'s clock date `T_sim` (`date_of_birth <= T_sim` and `date_of_death IS NULL OR date_of_death > T_sim`). In Phase 1 unit/integration tests and standalone bootstrap, an explicit test/stub verifier allows full end-to-end validation of Group creation, invitations, character selection locking, era-liveness rejection, and RBAC without circular Phase 1 dependencies.
+- **Defense in Depth:** `frontend-gateway` validates Ed25519 JWT signatures and CSRF tokens at the edge, while `sheet-aggregator`, `character-registry`, `sim-character-generator`, `chat-service`, and `sim-clock` enforce fine-grained authorization via `user-admin`'s `AuthorizationService` (with `GROUP_MEMBERSHIP`, generation quotas, and GM ownership verified on every sensitive mutation).
 
 ---
 
