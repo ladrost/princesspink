@@ -121,12 +121,13 @@ linters:
     paths:
       - '^libs/proto/gen/'
     rules:
-      # External test packages (package foo_test) do not require a duplicate
-      # package comment when the tested package already provides doc.go.
+      # Test files (*_test.go) declare Test*/Benchmark*/Fuzz*/Example* functions
+      # for the Go test runner and external foo_test packages that do not need
+      # duplicate package comments when the tested package already provides doc.go.
+      # Keep goheader, testableexamples, misspell, dupword, and nolintlint active on tests.
       - path: '_test\.go$'
         linters:
           - godoclint
-        text: 'package should have a package comment|require-pkg-doc'
       - path: '_test\.go$'
         linters:
           - revive

@@ -39,7 +39,8 @@ Keep PRs focused on a single logical change and do NOT create release Git tags (
 
 <!-- Describe how you verified these changes, including new or updated tests and exact commands run. -->
 
-- [ ] `make check` (`fmt-check`, `vet`, `lint`, `test-race`, `vuln`) — or scoped `make check SERVICE=<name>`
+- [ ] `make check` (`fmt-check`, `vet`, `lint` with root `.golangci.yml`, `test-race` including `Example*` tests, `vuln`) — or scoped `make check SERVICE=<name>`
+- [ ] `make doc` (verified rendered Go package documentation and executable examples, if Go modules changed)
 - [ ] `make test-sim` (deterministic fixed-seed `//go:build simulation` tests, if applicable)
 - [ ] `make test-integration` (Testcontainers PostgreSQL 18+ / NATS JetStream, if applicable)
 - [ ] `make proto-lint`, `make proto-breaking`, and `make proto-gen` (if `.proto` files changed)
@@ -57,11 +58,12 @@ Keep PRs focused on a single logical change and do NOT create release Git tags (
 
 - [ ] **Content & Safety Policy:** All changes strictly uphold PrincessPink's **zero-violence, zero-nudity** policy (no combat, gore, explicit content, or unmoderated image uploads) and the [Code of Conduct](https://github.com/ladrost/princesspink/blob/main/CODE_OF_CONDUCT.md).
 - [ ] **Go & Shared Libraries:** Code follows idiomatic Go 1.27+ (`CGO_ENABLED=0`) standards and uses mandatory `libs/` packages (`logging`, `telemetry`, `proto`, `config`, `uuid`) where applicable—no PII/secrets in logs, no unbounded IDs as Prometheus labels, and no hardcoded biological magic constants.
+- [ ] **Source Code Documentation ([ADR-0014](https://github.com/ladrost/princesspink/blob/main/docs/architecture/ADR-0014-compulsory-go-and-open-source-source-code-documentation.md)):** Every authored Go file has an `SPDX-License-Identifier: BSD-3-Clause` header; every package has a canonical `doc.go` / `// Package <name>` comment; all exported symbols (and non-obvious units, bounds, concurrency, and error semantics) have complete-sentence Go doc comments; `libs/` packages include runnable `Example*` tests with `// Output:`; modified modules/services have up-to-date `README.md` files; `.proto` (`COMMENTS`), OpenAPI, and SQL comments are updated; and inline comments explain *why* without commented-out code, untracked `TODO`s, or redundant syntax narration.
 - [ ] **Domain, Security & Cloud Invariants:** Changes respect immutable character identity/life history (`REPLAY_IMMUTABLE`), deterministic seeded PRNGs, parameterized SQL (`pgx/v5`), defense-in-depth RBAC/group ownership checks, validated canonical UUIDv7 SQLite paths, and private per-namespace subnet isolation with end-to-end TLS 1.3 / mTLS in cloud environments ([ADR-0012](https://github.com/ladrost/princesspink/blob/main/docs/architecture/ADR-0012-private-subnet-isolation-and-encrypted-cloud-communication.md)).
 - [ ] **Contracts & Workspace Hygiene:** Regenerated files under `libs/proto/gen/go/` are committed (if `.proto` changed), `go.work` is synchronized (`make work-use && make work-sync`) if modules were added, and no release tags (`<service>/v<VERSION>`) were created.
-- [ ] **Test & Linter Integrity:** Proportional unit, edge-case, simulation, or integration tests are added/updated; no failing tests are skipped or weakened; no unjustified `//nolint` or `//noinspection` directives were introduced.
+- [ ] **Test & Linter Integrity:** Proportional unit, edge-case, simulation, or integration tests are added/updated; no failing tests are skipped or weakened; no bare or unjustified `//nolint`, `//revive:disable`, or `//noinspection` directives were introduced.
 - [ ] **Documentation & Clean Tree:** `docs/Concept.md`, relevant ADRs under `docs/architecture/`, or `README.md` are updated if architecture, contracts, or workflows changed; no secrets, `.env` files, `bin/`, or `.coverage/` artifacts are committed.
-- [ ] **AI-Assisted Contributions (if applicable):** If AI coding tools were used, every line of generated code, tests, and documentation was personally reviewed and verified against [`AGENTS.md`](https://github.com/ladrost/princesspink/blob/main/AGENTS.md) and the project's ADRs.
+- [ ] **AI-Assisted Contributions (if applicable):** If AI coding tools were used, every line of generated code, source comments/docstrings ([ADR-0014](https://github.com/ladrost/princesspink/blob/main/docs/architecture/ADR-0014-compulsory-go-and-open-source-source-code-documentation.md)), tests, and documentation was personally reviewed and verified against [`AGENTS.md`](https://github.com/ladrost/princesspink/blob/main/AGENTS.md) and the project's ADRs (confirming accurate Go docs and zero low-signal AI comment bloat).
 
 ## Additional Notes for Reviewers
 

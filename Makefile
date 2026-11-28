@@ -263,7 +263,7 @@ vet: ## Run 'go vet' across all modules (or SERVICE=<name>)
 	done
 
 .PHONY: lint
-lint: ## Run golangci-lint across all modules (or SERVICE=<name>)
+lint: ## Run golangci-lint across all modules using root .golangci.yml (or SERVICE=<name>)
 	@command -v $(GOLANGCI_LINT) >/dev/null 2>&1 || { echo "Error: $(GOLANGCI_LINT) is not installed (run 'make tools')." >&2; exit 1; }
 	@if [ -z "$(TARGET_MODULES)" ]; then \
 		echo "No Go modules found under libs/ or services/."; \
@@ -271,7 +271,18 @@ lint: ## Run golangci-lint across all modules (or SERVICE=<name>)
 	fi
 	@for mod in $(TARGET_MODULES); do \
 		echo "==> [lint] $$mod"; \
-		(cd "$$mod" && $(GOLANGCI_LINT) run ./...); \
+		(cd "$$mod" && $(GOLANGCI_LINT) run --config "$(CURDIR)/.golangci.yml" ./...); \
+	done
+
+.PHONY: doc
+doc: ## Render Go package documentation and examples via 'go doc' (or SERVICE=<name>)
+	@if [ -z "$(TARGET_MODULES)" ]; then \
+		echo "No Go modules found under libs/ or services/."; \
+		exit 0; \
+	fi
+	@for mod in $(TARGET_MODULES); do \
+		echo "==> [doc] $$mod"; \
+		(cd "$$mod" && for pkg in $$($(GO) list ./...); do $(GO) doc -all -ex "$$pkg"; done); \
 	done
 
 .PHONY: qodana

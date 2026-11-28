@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-11-22
 - **Deciders:** PrincessPink Architecture
-- **Related Documents:** [`docs/Concept.md`](../Concept.md), [`README.md`](../../README.md), [`Makefile`](../../Makefile), [`ADR-0001`](ADR-0001-minimum-postgresql-version.md), [`ADR-0005`](ADR-0005-shared-grpc-protobuf-contracts.md), [`ADR-0008`](ADR-0008-multi-module-makefile-build-automation.md)
+- **Related Documents:** [`docs/Concept.md`](../Concept.md), [`README.md`](../../README.md), [`Makefile`](../../Makefile), [`.golangci.yml`](../../.golangci.yml), [`qodana.yaml`](../../qodana.yaml), [`ADR-0001`](ADR-0001-minimum-postgresql-version.md), [`ADR-0005`](ADR-0005-shared-grpc-protobuf-contracts.md), [`ADR-0008`](ADR-0008-multi-module-makefile-build-automation.md), [`ADR-0014`](ADR-0014-compulsory-go-and-open-source-source-code-documentation.md)
 
 ---
 
@@ -38,7 +38,7 @@ PrincessPink implements a modular **GitHub Actions** pipeline suite under `.gith
 To keep pull-request feedback fast as the service catalog grows:
 
 - **Targeted Runs:** When a PR modifies only `services/<svc>/**`, `ci.yml` runs the Go test/lint/vuln matrix strictly for the affected service(s) via `make ... SERVICE=<svc>`.
-- **Full-Workspace Fan-Out:** When a PR modifies `libs/**`, `go.work`, `Makefile`, `.golangci.yml`, or `.github/workflows/**`, `ci.yml` automatically expands the matrix to validate all `libs/` and `services/` modules in parallel.
+- **Full-Workspace Fan-Out:** When a PR modifies `libs/**`, `go.work`, `Makefile`, `.golangci.yml`, `qodana.yaml`, or `.github/workflows/**`, `ci.yml` automatically expands the matrix to validate all `libs/` and `services/` modules in parallel—including compulsory Go and Protobuf source code documentation checks ([ADR-0014](ADR-0014-compulsory-go-and-open-source-source-code-documentation.md)).
 - **Protobuf Contract Gate:** Whenever `libs/proto/**` changes (or on every PR once `libs/proto` exists), CI runs `make proto-lint`, `make proto-breaking` (against `main`), and verifies that `make proto-gen` produces no uncommitted diff.
 - **PostgreSQL 18+ Integration Parity ([ADR-0001](ADR-0001-minimum-postgresql-version.md)):** Integration test jobs run against **PostgreSQL 18** (`postgres:18-alpine` via Testcontainers or GitHub Actions service containers) and NATS JetStream, validating RBAC boundaries, `uuidv7()` schemas, and outbox/event flows.
 
