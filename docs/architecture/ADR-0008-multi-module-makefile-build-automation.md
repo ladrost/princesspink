@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-11-22
 - **Deciders:** PrincessPink Architecture
-- **Related Documents:** [`docs/Concept.md`](../Concept.md), [`README.md`](../../README.md), [`Makefile`](../../Makefile), [`go.work`](../../go.work), [`ADR-0005`](ADR-0005-shared-grpc-protobuf-contracts.md), [`ADR-0006`](ADR-0006-shared-configuration-library.md), [`ADR-0009`](ADR-0009-github-actions-ci-cd.md)
+- **Related Documents:** [`docs/Concept.md`](../Concept.md), [`README.md`](../../README.md), [`Makefile`](../../Makefile), [`go.work`](../../go.work), [`.golangci.yml`](../../.golangci.yml), [`qodana.yaml`](../../qodana.yaml), [`ADR-0005`](ADR-0005-shared-grpc-protobuf-contracts.md), [`ADR-0006`](ADR-0006-shared-configuration-library.md), [`ADR-0009`](ADR-0009-github-actions-ci-cd.md), [`ADR-0014`](ADR-0014-compulsory-go-and-open-source-source-code-documentation.md)
 
 ---
 
@@ -37,7 +37,7 @@ PrincessPink adopts a single root **GNU `Makefile`** as the canonical developer 
 | **Workspace & Dependencies** | `work-use`, `work-sync`, `deps`, `tidy` | Synchronize `go.work`, download/verify module checksums, and tidy `go.mod` files. |
 | **Build** | `build`, `build-linux` | Compile binaries into `bin/` with `-trimpath`, `CGO_ENABLED=0`, and `-ldflags` embedding `Version` (from `services/<svc>/VERSION`), `Commit`, and `BuildDate`. |
 | **Testing** | `test`, `test-race`, `test-cover`, `test-sim`, `test-integration`, `bench` | Execute unit tests, race detection (`-race -count=1`), atomic coverage HTML reports, fixed-seed simulation cohorts (`-tags=simulation`), Testcontainers integration suites (`-tags=integration`), and benchmarks. |
-| **Code Quality & Security** | `fmt`, `fmt-check`, `vet`, `lint`, `vuln`, `check` | Format with `gofmt -s`, run `go vet`, `golangci-lint`, `govulncheck`, and aggregate them into a single local/CI quality gate (`make check`). |
+| **Code Quality & Security** | `fmt`, `fmt-check`, `vet`, `lint`, `doc`, `qodana`, `vuln`, `check` | Format with `gofmt -s`, run `go vet`, `golangci-lint` (using root [`.golangci.yml`](../../.golangci.yml) enforcing [ADR-0014](ADR-0014-compulsory-go-and-open-source-source-code-documentation.md)), render `go doc -all -ex`, run JetBrains Qodana ([`qodana.yaml`](../../qodana.yaml)), run `govulncheck`, and aggregate core gates into `make check`. |
 | **Contracts & Generation** | `generate`, `proto-lint`, `proto-breaking`, `proto-gen` | Run `go generate` and `buf` Protobuf lint, breaking-change detection against `main`, and Go code generation ([ADR-0005](ADR-0005-shared-grpc-protobuf-contracts.md)). |
 | **Independent Versioning** | `versions`, `tag` | Display all services and their `VERSION` files; create annotated scoped Git tags (`<service>/v<VERSION>`) per Concept §3.5. |
 | **Containers & Local Stack** | `docker-build`, `docker-buildx`, `docker-push`, `docker-scan`, `dev-up`, `dev-down` | Build version-tagged images for ACR (`princesspink.azurecr.io`), multi-arch `linux/amd64,linux/arm64` builds, Trivy `HIGH,CRITICAL` scans, and local Docker Compose stacks. |

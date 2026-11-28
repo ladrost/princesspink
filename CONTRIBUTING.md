@@ -29,6 +29,7 @@ Whether you are proposing a scientific model refinement, writing a shared librar
   - [Static Analysis & Security Scans](#static-analysis--security-scans)
 - [Go Coding Standards & Architectural Guidelines](#go-coding-standards--architectural-guidelines)
   - [Idiomatic Go & Pure-Go Discipline](#idiomatic-go--pure-go-discipline)
+  - [Source Code Documentation (Compulsory — ADR-0014)](#source-code-documentation-compulsory--adr-0014)
   - [Context, Concurrency & Error Handling](#context-concurrency--error-handling)
   - [Mandatory Shared Platform Libraries (`libs/`)](#mandatory-shared-platform-libraries-libs)
   - [Domain & Scientific Modeling Invariants](#domain--scientific-modeling-invariants)
@@ -59,7 +60,7 @@ PrincessPink is currently in **Phase 0 (Architectural Foundation)**, transitioni
 
 - **[`README.md`](README.md)** — Project overview, architecture summary, and roadmap.
 - **[`docs/Concept.md`](docs/Concept.md)** — Domain model, character lifecycle, genetics/simulation rules, microservice catalog, persistence strategy, and AKS deployment design.
-- **[`docs/architecture/`](docs/architecture/)** — Architecture Decision Records ([ADR-0001](docs/architecture/ADR-0001-minimum-postgresql-version.md) through [ADR-0013](docs/architecture/ADR-0013-static-website-service-and-public-results-presentation.md)).
+- **[`docs/architecture/`](docs/architecture/)** — Architecture Decision Records ([ADR-0001](docs/architecture/ADR-0001-minimum-postgresql-version.md) through [ADR-0014](docs/architecture/ADR-0014-compulsory-go-and-open-source-source-code-documentation.md)).
 - **[`AGENTS.md`](AGENTS.md)** — Coding standards, domain invariants, linter policies, and shared library rules (applies to both human contributors and AI coding agents).
 
 ---
@@ -189,9 +190,10 @@ Every new microservice under `services/<service-name>/` must follow the workspac
 services/<service-name>/
 ├── go.mod                      # Standalone Go module (go 1.27)
 ├── VERSION                     # Independent SemVer file (e.g., 0.1.0)
+├── README.md                   # Service purpose, schemas/SQLite artifacts, interfaces, config & local commands (ADR-0014)
 ├── Dockerfile                  # Multi-stage CGO_ENABLED=0 build -> non-root distroless/static
-├── cmd/<service-name>/main.go  # Entry point (or cmd/server/main.go) embedding Version/Commit/BuildDate
-└── internal/                   # Service-private domain, handler, storage, and adapter packages
+├── cmd/<service-name>/main.go  # Entry point (or cmd/server/main.go) with SPDX header, command doc & Version/Commit/BuildDate
+└── internal/                   # Service-private domain, handler, storage, and adapter packages (each with doc.go for multi-file packages)
 ```
 
 After creating the module, run `make work-use && make work-sync` to register it in `go.work`.
@@ -216,8 +218,9 @@ Always use the root [`Makefile`](Makefile) targets so your local validation matc
 | `make check SERVICE=<name>` | Run the full CI quality gate scoped to a single microservice. |
 | `make fmt` / `make fmt-check` | Format Go files with `gofmt -s -w` / verify formatting without modifying files. |
 | `make vet` | Run `go vet ./...` across target modules. |
-| `make lint` | Run `golangci-lint` (v2) across target modules. |
-| `make qodana` | Run JetBrains Qodana Go static analysis (`qodana.yaml`, `--fail-threshold 0`). |
+| `make lint` | Run `golangci-lint` (v2) with root [`.golangci.yml`](.golangci.yml) across target modules (enforces compulsory documentation per [ADR-0014](docs/architecture/ADR-0014-compulsory-go-and-open-source-source-code-documentation.md)). |
+| `make doc` | Render Go package documentation and executable examples via `go doc -all -ex`. |
+| `make qodana` | Run JetBrains Qodana Go static analysis ([`qodana.yaml`](qodana.yaml), `--fail-threshold 0`, including Go doc inspections). |
 | `make vuln` | Run `govulncheck ./...` to detect reachable known Go vulnerabilities. |
 | `make test` | Run standard Go unit tests (`go test ./...`). |
 | `make test-race` | Run tests with the race detector and caching disabled (`go test -race -count=1 ./...`). |
@@ -256,6 +259,7 @@ PrincessPink uses a layered testing model ([`docs/Concept.md`](docs/Concept.md#7
 All internal synchronous gRPC RPCs and NATS JetStream event schemas live under `libs/proto/` and are governed by `buf` ([ADR-0005](docs/architecture/ADR-0005-shared-grpc-protobuf-contracts.md)):
 
 - Evolve `v1` contracts **additively only**. Never renumber, retype, or remove existing fields without reserving names/numbers; introduce `v2` for breaking changes.
+- Provide leading comments on every service, RPC, message, field, enum, enum value, and oneof—enforced by Buf's `COMMENTS` lint category ([ADR-0005](docs/architecture/ADR-0005-shared-grpc-protobuf-contracts.md), [ADR-0014](docs/architecture/ADR-0014-compulsory-go-and-open-source-source-code-documentation.md)).
 - Whenever you modify `.proto` files, run:
 
   ```bash
@@ -280,7 +284,7 @@ If you have the Qodana CLI or JetBrains GoLand installed, also run:
 make qodana
 ```
 
-Fix warnings reported by `golangci-lint`, `go vet`, and Qodana at their root cause. Do not add `//nolint` or `//noinspection` directives unless there is a documented, unavoidable false positive.
+Fix warnings reported by `golangci-lint` (configured in root [`.golangci.yml`](.golangci.yml)), `go vet`, and Qodana ([`qodana.yaml`](qodana.yaml)) at their root cause—including all compulsory Go doc comment, SPDX header, and testable-example checks ([ADR-0014](docs/architecture/ADR-0014-compulsory-go-and-open-source-source-code-documentation.md)). Bare `//nolint`, `//revive:disable`, or `//noinspection` directives are forbidden (`nolintlint` and `revive` require a specific linter/rule name and a clear justification for any unavoidable false positive).
 
 ---
 
@@ -290,12 +294,38 @@ Fix warnings reported by `golangci-lint`, `go vet`, and Qodana at their root cau
 
 - Follow [Effective Go](https://go.dev/doc/effective_go) and [Go Code Review Comments](https://go.dev/wiki/CodeReviewComments).
 - Format all Go source files with `gofmt -s` (`make fmt`). Group imports cleanly: standard library, third-party packages, and workspace/internal packages.
-- Document every exported type, function, method, and constant with a Go doc comment starting with the symbol name.
+- Follow all compulsory Go and Open-Source source code documentation rules in [Source Code Documentation (Compulsory — ADR-0014)](#source-code-documentation-compulsory--adr-0014).
 - Prefer simple, readable control flow with early returns over deep nesting; avoid premature abstraction and unnecessary reflection.
 - Define small, focused interfaces **at the consumer side** rather than preemptively in implementation packages.
 - Avoid package-level mutable globals; inject dependencies explicitly through `New...` constructors.
 - Keep `internal/` packages private to their owning module.
 - **Pure-Go Builds (`CGO_ENABLED=0`):** Per [ADR-0011](docs/architecture/ADR-0011-go-as-sole-programming-language.md), avoid dependencies that require CGo (for SQLite, prefer pure-Go `modernc.org/sqlite`) so every service cross-compiles cleanly to static `linux/amd64` and `linux/arm64` binaries for `distroless/static` containers.
+
+### Source Code Documentation (Compulsory — ADR-0014)
+
+Source code documentation following [Go Doc Comments](https://go.dev/doc/comment) and open-source best practices is **compulsory** for both human contributors and AI coding assistants ([ADR-0014](docs/architecture/ADR-0014-compulsory-go-and-open-source-source-code-documentation.md)) and is enforced automatically by root [`.golangci.yml`](.golangci.yml), [`qodana.yaml`](qodana.yaml), `gofmt -s`, `go test`, and `buf lint`:
+
+- **SPDX License Header:** Start every authored, non-generated Go source file on line 1 with `// SPDX-License-Identifier: BSD-3-Clause` (matching [`LICENSE`](LICENSE)), separated by a blank line from any `//go:build` constraint and from the `// Package <name>` comment so license headers never appear in `go doc` / `pkg.go.dev`.
+- **Package Comments (`doc.go`):** Every Go package (`libs/*`, exported packages, and `internal/*` packages) must have a single canonical package comment starting with `// Package <name> ...` (in a dedicated `doc.go` for multi-file packages). Every `cmd/<service>/main.go` entry point must carry a concise command overview comment.
+- **Exported Declarations:** Document every exported `type`, `func`, method, `const` (or grouped `const`/`var` block), and `var` with a complete-sentence Go doc comment directly above the declaration starting with the **exact symbol name** and ending with a **period (`.`)**. Document units (`_cm`, `_kg`, `_bpm`, `_minutes`), valid ranges, concurrency safety, zero-value behavior, and sentinel/typed errors (`errors.Is`/`errors.As`) on exported structs, fields, and interfaces.
+- **Go 1.19+ Doc Comment Syntax & Deprecations:** Use `go/doc/comment` syntax (`# Headings`, lists, indented code blocks, `[Symbol]` / `[pkg.Symbol]` doc links, and `[Label]: URL` definitions with zero unused links) formatted by `gofmt -s`; do not use raw HTML or Markdown-only formatting (`**bold**`, triple backticks) inside Go doc comments. Use `Deprecated: Use [Replacement] instead.` for deprecated APIs.
+- **Runnable `Example` Functions (`*_test.go`):** Shared library packages under `libs/` (and reusable exported APIs) must provide runnable `Example*` functions with `// Output:` assertions so `go test` validates examples continuously and `make doc` renders them cleanly.
+- **Per-Module & Per-Service `README.md`:** Every `libs/<module>/` and `services/<service>/` must include a concise `README.md` summarizing purpose, owned schemas/SQLite stores, gRPC/HTTP/NATS contracts, `libs/config` keys, local commands (`make check SERVICE=<name>`, `make doc SERVICE=<name>`), and relevant ADRs.
+- **High-Signal "Why" Comments (No Bloat or Dead Code):** Use inline and unexported comments to explain *why*—scientific formulas and SQLite reference citations, PRNG seed derivations, `FOR UPDATE` / concurrency ownership, `REPLAY_IMMUTABLE` guards, and RBAC/mTLS boundaries. Never narrate obvious syntax, never commit commented-out code, and reference a GitHub issue on every `TODO` / `FIXME` (`// TODO(#123): ...`).
+- **Non-Go Contracts & Schemas:** Document all `.proto` declarations with leading comments (`buf` `COMMENTS` category), OpenAPI specs (`docs/api/`), SQL migrations and PostgreSQL `COMMENT ON TABLE`/`COLUMN` metadata, `Makefile` `##` descriptions, Dockerfiles, and IaC/Helm configs.
+- **Atomic Updates & Safety Hygiene:** Update doc comments, `Example*` tests, and `README.md` in the same PR as behavior or contract changes. Comments and examples must strictly follow the **zero-violence, zero-nudity** policy and contain zero secrets or PII.
+
+```go
+// SPDX-License-Identifier: BSD-3-Clause
+
+// Package fertility computes age- and health-adjusted reproductive fertility scores.
+//
+// All biological curve constants are loaded from versioned read-only SQLite
+// reference datasets rather than hardcoded magic numbers (see [docs/Concept.md]).
+//
+// [docs/Concept.md]: https://github.com/ladrost/princesspink/blob/main/docs/Concept.md
+package fertility
+```
 
 ### Context, Concurrency & Error Handling
 
@@ -332,9 +362,9 @@ Use the shared platform libraries defined in our ADRs rather than introducing co
 
 Contributors who use AI coding assistants (such as Junie, GitHub Copilot, or similar tools) are welcome, provided they:
 
-1. Direct the assistant to follow [`AGENTS.md`](AGENTS.md) and the project's ADRs.
-2. Thoroughly review, understand, and verify every line of generated code, documentation, and tests before opening a PR.
-3. Run all relevant quality gates (`make check`, `make test-sim`, `make proto-lint`, etc.) locally and take full responsibility for the accuracy, security, and licensing compliance of the submitted changes.
+1. Direct the assistant to follow [`AGENTS.md`](AGENTS.md) and the project's ADRs—including compulsory Go and Open-Source source code documentation ([ADR-0014](docs/architecture/ADR-0014-compulsory-go-and-open-source-source-code-documentation.md)).
+2. Thoroughly review, understand, and verify every line of generated code, source comments/docstrings (ensuring accurate Go doc comments, SPDX headers, and high-signal "why" comments without redundant AI syntax narration or bare `//nolint` bypasses), documentation, and tests before opening a PR.
+3. Run all relevant quality gates (`make check`, `make doc`, `make test-sim`, `make proto-lint`, etc.) locally and take full responsibility for the accuracy, security, and licensing compliance of the submitted changes.
 
 ---
 
@@ -352,8 +382,9 @@ Before marking a PR ready for review, confirm that:
 
 - [ ] The PR links to the relevant GitHub issue(s) or ADR(s) and clearly explains the motivation, approach, and verification performed.
 - [ ] All changes strictly uphold the **zero-violence, zero-nudity** Content & Safety Policy.
-- [ ] `make check` passes cleanly (formatting, `go vet`, `golangci-lint`, `-race` unit tests, and `govulncheck`).
-- [ ] Additional applicable checks pass (`make test-sim`, `make test-integration`, `make proto-lint`, `make proto-breaking`, `make qodana`, `make docker-scan`).
+- [ ] `make check` passes cleanly (formatting, `go vet`, `golangci-lint` with root `.golangci.yml`, `-race` unit tests including `Example*` tests, and `govulncheck`).
+- [ ] Compulsory Go & Open-Source source code documentation ([ADR-0014](docs/architecture/ADR-0014-compulsory-go-and-open-source-source-code-documentation.md)) is complete and accurate (SPDX `BSD-3-Clause` headers, `doc.go` / package comments, Go doc comments on exported symbols, runnable `Example*` tests for `libs/`, module/service `README.md`, `.proto` `COMMENTS`, high-signal "why" comments, and zero commented-out code or untracked `TODO`s).
+- [ ] Additional applicable checks pass (`make doc`, `make test-sim`, `make test-integration`, `make proto-lint`, `make proto-breaking`, `make qodana`, `make docker-scan`).
 - [ ] Regenerated files under `libs/proto/gen/go/` are committed if `.proto` definitions changed.
 - [ ] Unit, edge-case, deterministic simulation, or integration tests are added/updated proportionally to the change.
 - [ ] Documentation (`docs/Concept.md`, relevant ADRs in `docs/architecture/`, or `README.md`) is updated if architecture, contracts, or developer workflows changed.
@@ -365,9 +396,10 @@ Pull requests are reviewed against the following criteria:
 
 1. **Domain & Policy Alignment:** Adherence to [`docs/Concept.md`](docs/Concept.md), ADRs, biological/RPG domain invariants, and the Content & Safety Policy.
 2. **Go Quality & Maintainability:** Idiomatic Go style, clean API boundaries, proper error wrapping, race-free concurrency, context propagation, and bounded resource usage.
-3. **Security, Cloud Networking & Privacy:** Parameterized SQL, defense-in-depth RBAC/group ownership enforcement, safe UUID validation (especially for SQLite artifact paths), zero PII/secret leakage in logs/errors/metrics, private per-namespace subnet placement with zero public backend exposure, mandatory end-to-end TLS 1.3 / mTLS for all cloud communication ([ADR-0012](docs/architecture/ADR-0012-private-subnet-isolation-and-encrypted-cloud-communication.md)), and pure-Go static container compatibility.
-4. **Contract & Observability Hygiene:** Backward-compatible Protobuf evolution, structured `slog` context logging, OpenTelemetry trace propagation, and low-cardinality Prometheus metric labels.
-5. **Testing & Reproducibility:** Meaningful table-driven tests covering negative/edge cases, deterministic fixed-seed simulation tests where applicable, and zero flaky tests.
+3. **Compulsory Source Code Documentation ([ADR-0014](docs/architecture/ADR-0014-compulsory-go-and-open-source-source-code-documentation.md)):** Valid SPDX `BSD-3-Clause` file headers, canonical `doc.go` / package docs, complete-sentence Go doc comments on all exported declarations (and non-obvious units/bounds/errors), runnable `Example*` tests for `libs/`, up-to-date module/service `README.md`, `.proto` `COMMENTS` / SQL / OpenAPI descriptions, high-signal "why" comments (free of stale text, commented-out code, untracked `TODO`s, or noisy syntax narration), and zero unjustified `//nolint` / `//noinspection` bypasses.
+4. **Security, Cloud Networking & Privacy:** Parameterized SQL, defense-in-depth RBAC/group ownership enforcement, safe UUID validation (especially for SQLite artifact paths), zero PII/secret leakage in logs/errors/metrics, private per-namespace subnet placement with zero public backend exposure, mandatory end-to-end TLS 1.3 / mTLS for all cloud communication ([ADR-0012](docs/architecture/ADR-0012-private-subnet-isolation-and-encrypted-cloud-communication.md)), and pure-Go static container compatibility.
+5. **Contract & Observability Hygiene:** Backward-compatible Protobuf evolution, structured `slog` context logging, OpenTelemetry trace propagation, and low-cardinality Prometheus metric labels.
+6. **Testing & Reproducibility:** Meaningful table-driven tests covering negative/edge cases, deterministic fixed-seed simulation tests where applicable, and zero flaky tests.
 
 ### Review Etiquette
 

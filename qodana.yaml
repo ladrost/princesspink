@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: BSD-3-Clause
 # JetBrains Qodana configuration for PrincessPink (Go multi-module workspace)
 # Docs: https://www.jetbrains.com/help/qodana/configuration-reference.html
 version: "1.0"
@@ -9,6 +10,13 @@ failThreshold: 0
 profile:
   name: qodana.recommended
   inspections:
+    # Compulsory Go source code documentation inspections (ADR-0014)
+    - inspection: GoExportedElementShouldHaveComment
+      enabled: true
+    - inspection: GoCommentStart
+      enabled: true
+    - inspection: GoCommentLeadingSpace
+      enabled: true
     - group: ALL
       ignore:
         - "libs/proto/gen"

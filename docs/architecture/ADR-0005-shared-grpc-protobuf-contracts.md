@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-11-22
 - **Deciders:** PrincessPink Architecture
-- **Related Documents:** [`docs/Concept.md`](../Concept.md), [`README.md`](../../README.md), [`Makefile`](../../Makefile), [`ADR-0002`](ADR-0002-world-chat-microservices-and-server-selection.md), [`ADR-0004`](ADR-0004-shared-opentelemetry-observability.md), [`ADR-0008`](ADR-0008-multi-module-makefile-build-automation.md), [`ADR-0012`](ADR-0012-private-subnet-isolation-and-encrypted-cloud-communication.md), [`ADR-0013`](ADR-0013-static-website-service-and-public-results-presentation.md)
+- **Related Documents:** [`docs/Concept.md`](../Concept.md), [`README.md`](../../README.md), [`Makefile`](../../Makefile), [`ADR-0002`](ADR-0002-world-chat-microservices-and-server-selection.md), [`ADR-0004`](ADR-0004-shared-opentelemetry-observability.md), [`ADR-0008`](ADR-0008-multi-module-makefile-build-automation.md), [`ADR-0012`](ADR-0012-private-subnet-isolation-and-encrypted-cloud-communication.md), [`ADR-0013`](ADR-0013-static-website-service-and-public-results-presentation.md), [`ADR-0014`](ADR-0014-compulsory-go-and-open-source-source-code-documentation.md)
 
 ---
 
@@ -52,7 +52,7 @@ libs/proto/
 ### 2. Code Generation & Compatibility Governance (`buf`)
 
 - **Tooling:** Managed via `buf` (`make proto-lint`, `make proto-breaking`, `make proto-gen` in `Makefile`; [ADR-0008](ADR-0008-multi-module-makefile-build-automation.md)).
-- **Linting (`buf lint`):** Enforces `STANDARD` lint rules (package directory matching, `PascalCase` messages/RPCs, `snake_case` fields, versioned packages, `Request`/`Response` suffixes).
+- **Linting (`buf lint`):** Enforces `STANDARD` lint rules (package directory matching, `PascalCase` messages/RPCs, `snake_case` fields, versioned packages, `Request`/`Response` suffixes) **plus the `COMMENTS` category** (`COMMENT_SERVICE`, `COMMENT_RPC`, `COMMENT_MESSAGE`, `COMMENT_FIELD`, `COMMENT_ENUM`, `COMMENT_ENUM_VALUE`, `COMMENT_ONEOF` per [ADR-0014](ADR-0014-compulsory-go-and-open-source-source-code-documentation.md)) so every RPC, message, field, enum, and event carries leading documentation that propagates into generated Go doc comments.
 - **Breaking Change Detection (`buf breaking`):** CI runs `buf breaking --against '.git#branch=main'` on every pull request so fields are never renumbered, retyped, or removed within a major version (`v1`). Breaking contract changes require introducing a new major package version (`v2`) with a deprecation window.
 - **Committed Generated Code:** Generated Go code under `libs/proto/gen/go/` is committed to the repository so `go build` and `go test` work out of the box without requiring `protoc`/`buf` on every build machine; CI verifies that `make proto-gen` produces a clean git diff.
 

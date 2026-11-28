@@ -70,7 +70,7 @@ PrincessPink enforces a strict, non-negotiable **zero-violence, zero-nudity** po
 | **Character Sheet & Attributes** | `character-registry`, `sheet-aggregator` (concurrent `errgroup` fan-out with graceful degradation, `discovery_mode` filtering, and tick-based caching), `gamification-service` (Lineage Chronicle, Genetic Discovery Codex, Milestones, Challenges & Dynasty Almanac), and dedicated `attr-*` microservices (including `attr-milestones` and `attr-partner-bond`) |
 | **Simulation & Genetics Engine** | Event-driven Go microservices (`sim-clock`, `sim-character-generator`, `sim-roleplay`, `sim-egg-reserve`, `sim-egg-selection`, `sim-menarche`, `sim-menstruation`, `sim-ejaculation`, `sim-sperm-race`, `sim-gamete-surface`, `sim-conception`, `sim-dna`, `sim-prenatal-loss`, `sim-birth-date`, `sim-gestation`, `sim-health`, `sim-mortality`, `sim-lifecycle`) using **SQLite** for scientific reference data, per-female egg-reserve databases, and per-ejaculation sperm-cell artifacts |
 | **Real-Time Chat** | `frontend-chat` + `chat-service` + `chat-world-registry` with player-selectable World Chat Servers (`chat.world.<world_server_id>`), PostgreSQL 18+ persistence (`chat.*` schema), NATS JetStream fan-out, rate limiting, and content-policy moderation ([ADR-0002](docs/architecture/ADR-0002-world-chat-microservices-and-server-selection.md)) |
-| **Observability & Quality** | **OpenTelemetry** tracing ([ADR-0004](docs/architecture/ADR-0004-shared-opentelemetry-observability.md)), `log/slog` structured JSON logging ([ADR-0003](docs/architecture/ADR-0003-shared-logging-library.md)), Prometheus metrics, deterministic fixed-seed simulation tests, `golangci-lint`, `govulncheck`, and Trivy container scanning (`Makefile` [ADR-0008](docs/architecture/ADR-0008-multi-module-makefile-build-automation.md) & GitHub Actions [ADR-0009](docs/architecture/ADR-0009-github-actions-ci-cd.md)) |
+| **Observability & Quality** | **OpenTelemetry** tracing ([ADR-0004](docs/architecture/ADR-0004-shared-opentelemetry-observability.md)), `log/slog` structured JSON logging ([ADR-0003](docs/architecture/ADR-0003-shared-logging-library.md)), Prometheus metrics, deterministic fixed-seed simulation tests, compulsory Go & Open-Source source code documentation ([ADR-0014](docs/architecture/ADR-0014-compulsory-go-and-open-source-source-code-documentation.md)), `golangci-lint` (`.golangci.yml`), JetBrains Qodana (`qodana.yaml`), `govulncheck`, and Trivy container scanning (`Makefile` [ADR-0008](docs/architecture/ADR-0008-multi-module-makefile-build-automation.md) & GitHub Actions [ADR-0009](docs/architecture/ADR-0009-github-actions-ci-cd.md)) |
 | **Deployment Target** | Hardened non-root `distroless/static` containers on private **Microsoft Azure Kubernetes Service (AKS)** with all backend services (and PostgreSQL 18+) in **private / non-public subnets** isolated **1:1 by Kubernetes namespace** (same namespace = same subnet; different namespaces = different subnets), per-subnet NSGs + `NetworkPolicy`, end-to-end encrypted cloud traffic (TLS 1.3 / mTLS), Private Endpoints for ACR/Key Vault/Blob Storage ([ADR-0012](docs/architecture/ADR-0012-private-subnet-isolation-and-encrypted-cloud-communication.md)) |
 
 For full entity-relationship models, architecture diagrams, SQLite deployment patterns, and service catalogs, see the [Technical Concept](docs/Concept.md).
@@ -90,13 +90,16 @@ princesspink/
 │   └── runbooks/           # Operational & incident response runbooks
 ├── libs/                   # Shared Go libraries (gRPC/Protobuf contracts, auth middleware, telemetry, helpers)
 ├── services/               # Independently deployable and versioned Go microservices
+├── .golangci.yml           # Root golangci-lint v2 config (compulsory docs per ADR-0014, safety & Go standards)
+├── AGENTS.md               # Authoritative coding, documentation & architecture guidelines for AI agents and devs
 ├── CODE_OF_CONDUCT.md      # Contributor Covenant Code of Conduct (v2.0)
 ├── CONTRIBUTING.md         # Contribution workflow, local setup, testing & code review standards
 ├── LICENSE                 # BSD 3-Clause License
-├── Makefile                # Multi-module build, test, lint, Protobuf, versioning, and container targets
+├── Makefile                # Multi-module build, test, lint, doc, Protobuf, versioning, and container targets
 ├── README.md               # Project overview and developer entry point
 ├── SECURITY.md             # Vulnerability reporting & security policy
-└── go.work                 # Go multi-module workspace definition
+├── go.work                 # Go multi-module workspace definition
+└── qodana.yaml             # JetBrains Qodana Go static analysis & doc inspection configuration
 ```
 
 ---
@@ -172,6 +175,7 @@ PrincessPink is currently in **Phase 0 / Architectural Foundation**. Planned imp
   - [ADR-0011: Go as the Sole Programming Language (Go 1.27+)](docs/architecture/ADR-0011-go-as-sole-programming-language.md)
   - [ADR-0012: Private Subnet Isolation per Namespace & End-to-End Encrypted Cloud Communication](docs/architecture/ADR-0012-private-subnet-isolation-and-encrypted-cloud-communication.md)
   - [ADR-0013: Built-In Static Website Service (`frontend-website` & `website-service`), System Admin Editorial Portal & Native Public Service Results Presentation](docs/architecture/ADR-0013-static-website-service-and-public-results-presentation.md)
+  - [ADR-0014: Compulsory Go & Open-Source Source Code Documentation Standards](docs/architecture/ADR-0014-compulsory-go-and-open-source-source-code-documentation.md)
 - **[Operational Runbooks (`docs/runbooks/`)](docs/runbooks/)** — Deployment, backup, and incident response runbooks (planned).
 
 ---

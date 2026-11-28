@@ -1,0 +1,149 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# PrincessPink — Root golangci-lint v2 Configuration
+# Enforces compulsory Go & Open-Source source code documentation (ADR-0014)
+# alongside Go 1.27+ correctness, concurrency, security, and shared-library rules.
+
+version: "2"
+
+run:
+  # Evaluate exclusion paths relative to this root .golangci.yml even when
+  # Makefile invokes golangci-lint from inside libs/<mod> or services/<svc>.
+  relative-path-mode: cfg
+
+linters:
+  default: none
+  enable:
+    # --- Compulsory Source Code Documentation & Open-Source Hygiene (ADR-0014) ---
+    - godoclint         # Official Go doc comment rules (pkg-doc, single-pkg-doc, require-pkg-doc, start-with-name, require-doc, deprecated, no-unused-link)
+    - godot             # Top-level declaration doc comments start with a capital letter and end with a period
+    - goheader          # Mandatory SPDX-License-Identifier: BSD-3-Clause header on authored Go files
+    - testableexamples  # Example* documentation functions must include verified // Output: assertions
+    - misspell          # Catch spelling mistakes in comments and strings
+    - dupword           # Catch accidental duplicate words in comments
+    - nolintlint        # Require specific linter name and explanation on every //nolint directive
+
+    # --- Idiomatic Go, Correctness & Static Analysis ---
+    - errcheck          # Never silently discard errors (AGENTS.md §5.4)
+    - errname           # Sentinel errors prefixed with Err; error types suffixed with Error
+    - errorlint         # Enforce %w wrapping and errors.Is / errors.As
+    - govet             # Standard Go vet analyzers (printf, copylocks, shadow, etc.)
+    - ineffassign       # Detect ineffectual assignments
+    - revive            # Enforce exported/package-comments, comment-spacings, naming, and idiomatic Go
+    - staticcheck       # Full Staticcheck suite including ST1000 and ST1020-ST1022 doc comment checks
+    - unused            # Detect unused constants, variables, functions, and types
+
+    # --- Concurrency, Context & Resource Safety ---
+    - bodyclose         # Ensure HTTP response bodies are closed
+    - containedctx      # Forbid storing context.Context inside structs
+    - noctx             # Require context.Context on outbound HTTP requests
+    - rowserrcheck      # Ensure sql.Rows.Err() is checked
+    - sqlclosecheck     # Ensure SQL rows/statements are closed
+
+    # --- Security & Mandatory Shared Platform Libraries (ADR-0003..0005, ADR-0010, ADR-0012) ---
+    - gosec             # Go security static analysis
+    - promlinter        # Prometheus metric naming hygiene (ADR-0004)
+    - protogetter       # Safe getter access on Protobuf messages (ADR-0005)
+    - sloglint          # Enforce context-aware non-global log/slog usage (ADR-0003)
+    - spancheck         # Verify OpenTelemetry spans are ended and errors recorded (ADR-0004)
+
+    # --- Testing Hygiene ---
+    - thelper           # Require t.Helper() in test helper functions
+    - usetesting        # Prefer testing package helpers (t.TempDir, t.Setenv, etc.)
+
+  settings:
+    godoclint:
+      default: basic
+      enable:
+        - require-pkg-doc
+        - require-doc
+        - no-unused-link
+
+    godot:
+      scope: declarations
+      period: true
+      capital: true
+      exclude:
+        - '^SPDX-License-Identifier:'
+        - '^(TODO|FIXME)\(#\d+\):'
+
+    goheader:
+      template: |-
+        SPDX-License-Identifier: BSD-3-Clause
+
+    dupword:
+      comments-only: true
+
+    misspell:
+      locale: US
+
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+
+    errcheck:
+      check-type-assertions: true
+      check-blank: true
+
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment
+
+    revive:
+      enable-default-rules: true
+      directives:
+        - name: specify-disable-reason
+          severity: error
+        - name: specify-disable-rule
+          severity: error
+      rules:
+        - name: exported
+        - name: package-comments
+        - name: comment-spacings
+
+    staticcheck:
+      # Explicitly enable all checks — do NOT disable ST1000 or ST1020-ST1022
+      # so package and exported symbol doc comment conventions remain compulsory.
+      checks:
+        - all
+
+    sloglint:
+      no-global: all
+      context: all
+
+  exclusions:
+    # Strictly exclude only files carrying Go's official generated-file header:
+    # ^// Code generated .* DO NOT EDIT\.$
+    generated: strict
+    # Deliberately omit the "comments" preset so doc comment rules stay compulsory.
+    presets:
+      - common-false-positives
+    paths:
+      - '^libs/proto/gen/'
+    rules:
+      # Test files (*_test.go) declare Test*/Benchmark*/Fuzz*/Example* functions
+      # for the Go test runner and external foo_test packages that do not need
+      # duplicate package comments when the tested package already provides doc.go.
+      # Keep goheader, testableexamples, misspell, dupword, and nolintlint active on tests.
+      - path: '_test\.go$'
+        linters:
+          - godoclint
+      - path: '_test\.go$'
+        linters:
+          - revive
+        text: 'should have a package comment'
+      - path: '_test\.go$'
+        linters:
+          - staticcheck
+        text: 'ST1000:'
+
+formatters:
+  enable:
+    - gofmt
+  settings:
+    gofmt:
+      simplify: true
+  exclusions:
+    generated: strict
+    paths:
+      - '^libs/proto/gen/'
